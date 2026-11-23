@@ -2,9 +2,9 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js';
-import { THEMES, themeById, EMBLEMS } from './themes.js';
-import { geocode } from './weather.js';
+} from './store.js?v=4';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=4';
+import { geocode } from './weather.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');

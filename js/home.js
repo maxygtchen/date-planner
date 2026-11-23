@@ -1,9 +1,9 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl,
-} from './store.js';
-import { themeById, EMBLEMS } from './themes.js';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js';
+} from './store.js?v=4';
+import { themeById, EMBLEMS } from './themes.js?v=4';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
