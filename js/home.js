@@ -2,9 +2,9 @@ import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
   decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar,
-} from './store.js?v=11';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=11';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=11';
+} from './store.js?v=12';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=12';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=12';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -147,8 +147,9 @@ function renderTimeline() {
         <h3>${esc(it.title)}</h3>${it.notes ? `<p>${esc(it.notes)}</p>` : ''}</div></li>`;
     }
 
-    const heading = sel ? sel.name : it.title;
-    const kicker = heading !== it.title ? it.title : type.label;
+    // The stop's own title is always the heading; the place goes underneath.
+    const heading = it.title || sel?.name || type.label;
+    const kicker = type.label;
     let body = '';
     if (opts.length > 1) {
       body = `<div class="options" role="radiogroup" aria-label="${esc(it.title)}">
@@ -161,8 +162,9 @@ function renderTimeline() {
           </div>`).join('')}
       </div>`;
     } else if (sel) {
-      const meta = [sel.tags, sel.price, sel.note].filter(Boolean).join(' · ');
-      body = `${meta ? `<p>${esc(meta)}</p>` : ''}<div class="tl-meta">${linksFor(sel)}</div>`;
+      const place = sel.name && sel.name.toLowerCase() !== heading.toLowerCase() ? sel.name : '';
+      const meta = [place, sel.tags, sel.price, sel.note].filter(Boolean).join(' · ');
+      body = `${meta ? `<p class="place">${esc(meta)}</p>` : ''}<div class="tl-meta">${linksFor(sel)}</div>`;
     }
 
     return `<li class="tl-item ${esc(it.type)}">${timeCol}<article class="tl-card card">
@@ -318,11 +320,7 @@ const hc = { mode: 'month', cursor: TODAY(), sel: TODAY() };
 const accent = (p) => themeById(p.theme).swatch[2];
 const plansOn = (iso) => calPlans.filter((p) => p.date === iso).sort((a, b) => a.startTime.localeCompare(b.startTime));
 const endOf = (p) => { const sc = schedule(p); return sc.length ? sc[sc.length - 1].end : parseHM(p.startTime); };
-const stopsOf = (p) => p.items.filter((it) => it.type !== 'travel').map((it) => {
-  const mine = loadPicks(p.id).options?.[it.id];
-  const o = it.options.find((x) => x.id === (mine || it.chosen)) || (it.options.length === 1 ? it.options[0] : null);
-  return o?.name || it.title;
-});
+const stopsOf = (p) => p.items.filter((it) => it.type !== 'travel').map((it) => it.title || it.options[0]?.name || 'Stop');
 const row = (p, withDate) => `<button class="plan-row ${p.date < TODAY() ? 'past' : ''}" data-open="${p.id}" style="--c:${accent(p)}">
     <i></i><span><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
     <small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${fmtTime(parseHM(p.startTime))} – ${fmtTime(endOf(p))}</small>

@@ -2,10 +2,10 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=11';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=11';
-import { geocode, placeFor } from './weather.js?v=11';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=11';
+} from './store.js?v=12';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=12';
+import { geocode, placeFor } from './weather.js?v=12';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=12';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -136,10 +136,7 @@ function renderCalendar() {
         <div class="wk-plans">
           ${ps.map((p) => `<div class="wk-item"><button class="wk-plan plan-row-drag" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
             <b>${esc(p.title || 'Untitled')}</b>
-            <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x) => {
-              const o = x.item.options.find((q) => q.id === x.item.chosen) || (x.item.options.length === 1 ? x.item.options[0] : null);
-              return `<li><span>${fmtTime(x.start)}</span>${esc(o?.name || x.item.title)}</li>`;
-            }).join('')}</ol>
+            <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x) => `<li><span>${fmtTime(x.start)}</span>${esc(x.item.title || x.item.options[0]?.name || '')}</li>`).join('')}</ol>
           </button>${trash(p)}</div>`).join('')}
           ${ps.length ? '' : `<button class="wk-add" data-act="new-on" data-date="${iso}">+</button>`}
         </div>

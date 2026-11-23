@@ -706,3 +706,5 @@ select {
 .side-row .plan-link { margin-bottom: 0; }
 .side-row .row-del { width: 34px; height: 34px; border-radius: 10px; border-color: transparent; background: transparent; opacity: .55; }
 .side-row:hover .row-del, .side-row .row-del:focus-visible { opacity: 1; border-color: var(--line); }
+
+.tl-card p.place { color: var(--ink); opacity: .8; }
