@@ -2,9 +2,9 @@ import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
   decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar,
-} from './store.js?v=10';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=10';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=10';
+} from './store.js?v=11';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=11';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=11';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;

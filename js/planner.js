@@ -2,10 +2,10 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=10';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=10';
-import { geocode, placeFor } from './weather.js?v=10';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=10';
+} from './store.js?v=11';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=11';
+import { geocode, placeFor } from './weather.js?v=11';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=11';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -179,14 +179,14 @@ function allDatesHTML() {
     ${past.length ? `<div class="day-list"><h3>Past</h3>${past.map((p) => planRow(p, true)).join('')}</div>` : ''}`;
 }
 
+// Only a hearted date is the month's favorite; hearts live on every date row below.
 function favHTML(c) {
   const key = toISODate(c).slice(0, 7);
-  const inMonth = state.plans.filter((p) => monthKey(p.date) === key).sort((a, b) => a.date.localeCompare(b.date));
-  if (!inMonth.length) return '';
-  const fav = inMonth.find((p) => p.favorite);
+  const fav = state.plans.find((p) => p.favorite && monthKey(p.date) === key);
+  if (!fav) return '';
   return `<div class="day-list fav-month">
     <h3>Favorite of ${MONTHS[c.getMonth()]}</h3>
-    ${fav ? planRow(fav, true) : inMonth.map((p) => planRow(p, true)).join('')}
+    ${planRow(fav, true)}
   </div>`;
 }
 
