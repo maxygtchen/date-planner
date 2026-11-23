@@ -37,9 +37,16 @@ export async function getForecast({ lat, lon }, isoDate) {
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunset,wind_speed_10m_max',
     hourly: 'temperature_2m,weather_code,precipitation_probability',
   });
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
-  if (!res.ok) throw new Error('weather-failed');
-  const j = await res.json();
+  const cacheKey = `dp.wx.${Number(lat).toFixed(3)},${Number(lon).toFixed(3)},${isoDate}`;
+  let j;
+  try {
+    j = await fetchJSON(`https://api.open-meteo.com/v1/forecast?${params}`);
+    try { localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), j })); } catch { /* ignore */ }
+  } catch (err) {
+    // Fall back to the last forecast this device saw for the same place and day.
+    try { const c = JSON.parse(localStorage.getItem(cacheKey)); if (c?.j) j = c.j; } catch { /* ignore */ }
+    if (!j) throw err;
+  }
   const d = j.daily;
   return {
     status: 'ok',
@@ -51,6 +58,22 @@ export async function getForecast({ lat, lon }, isoDate) {
       code: j.hourly.weather_code[i], rain: j.hourly.precipitation_probability[i],
     })),
   };
+}
+
+// Retries a slow or failed request a couple of times, each with a time limit.
+async function fetchJSON(url, tries = 3, ms = 8000) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: ctl.signal });
+      if (!res.ok) throw new Error(`weather-${res.status}`);
+      return await res.json();
+    } catch (err) { last = err; await new Promise((r) => setTimeout(r, 600 * (i + 1))); }
+    finally { clearTimeout(t); }
+  }
+  throw last || new Error('weather-failed');
 }
 
 export async function geocode(query) {

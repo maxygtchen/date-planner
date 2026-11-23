@@ -2,10 +2,10 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=7';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=7';
-import { geocode, placeFor } from './weather.js?v=7';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=7';
+} from './store.js?v=8';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=8';
+import { geocode, placeFor } from './weather.js?v=8';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');

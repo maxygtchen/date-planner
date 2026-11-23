@@ -1,9 +1,9 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label,
-} from './store.js?v=7';
-import { themeById, EMBLEMS, mountFx } from './themes.js?v=7';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=7';
+} from './store.js?v=8';
+import { themeById, EMBLEMS, mountFx } from './themes.js?v=8';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -192,7 +192,10 @@ function renderWeather() {
     'no-location': '—',
     error: 'Unavailable.',
   }[forecast.status];
-  if (msg) { el.innerHTML = `${head}<p class="wx-empty">${msg}</p>`; return; }
+  if (msg) {
+    el.innerHTML = `${head}<p class="wx-empty">${msg}${forecast.status === 'error' ? ' <button class="chip" type="button" id="wx-retry">Retry</button>' : ''}</p>`;
+    return;
+  }
 
   const [label, kind] = describe(forecast.code);
   const sched = schedule(plan);
@@ -218,6 +221,11 @@ function renderWeather() {
         ${ICONS[describe(h.code)[1]]}${h.temp}°</div>`).join('')}</div>
     ${tip ? `<p class="wx-tip">${esc(tip)}</p>` : ''}`;
 }
+
+$('#weather').addEventListener('click', (e) => {
+  if (e.target.id !== 'wx-retry') return;
+  forecast = null; renderWeather(); loadWeather();
+});
 
 // ---------- outfits ----------
 function renderOutfit() {
@@ -276,6 +284,7 @@ $('#send-picks').addEventListener('click', async () => {
 const SECTIONS = ['plan', 'weather', 'outfits'];
 const navLinks = [...document.querySelectorAll('.jump a')];
 let navLock = 0;
+let navTarget = null; // the section last tapped; kept until she scrolls by hand
 const setActive = (id) => navLinks.forEach((a) => a.classList.toggle('on', a.dataset.sec === id));
 // Height of the bar once it's stuck to the top (0 on desktop, where it's hidden).
 const barH = () => document.querySelector('.jump-wrap').offsetHeight;
@@ -285,12 +294,14 @@ navLinks.forEach((a) => a.addEventListener('click', (e) => {
   const id = a.dataset.sec;
   const top = document.getElementById(id).getBoundingClientRect().top + scrollY - barH() - 8;
   setActive(id);
+  navTarget = id;
   navLock = Date.now() + 900;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' });
 }));
 
 function syncNav() {
+  if (navTarget) { setActive(navTarget); return; }
   if (Date.now() < navLock) return;
   const line = barH() + 40;
   let cur = SECTIONS[0];
@@ -300,6 +311,7 @@ function syncNav() {
 }
 addEventListener('scroll', syncNav, { passive: true });
 addEventListener('scrollend', () => { navLock = 0; syncNav(); });
+['wheel', 'touchmove', 'keydown'].forEach((t) => addEventListener(t, () => { navTarget = null; }, { passive: true }));
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
