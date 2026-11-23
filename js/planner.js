@@ -1,6 +1,6 @@
 import {
-  loadPlans, savePlans, getFeaturedId, setFeaturedId, samplePlan, blankPlan, newItem, newOption, normalizePlan,
-  schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid,
+  loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
+  schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
 } from './store.js';
 import { THEMES, themeById, EMBLEMS } from './themes.js';
@@ -16,8 +16,12 @@ const state = {
   open: new Set(),
   filter: 'all',
   geo: [],
+  view: 'calendar',
+  cal: { mode: 'month', cursor: toISODate(new Date()), sel: toISODate(new Date()) },
 };
-state.curId = new URLSearchParams(location.search).get('plan') || getFeaturedId() || state.plans[0].id;
+const qsPlan = new URLSearchParams(location.search).get('plan');
+if (qsPlan) state.view = 'edit';
+state.curId = qsPlan || getFeaturedId() || state.plans[0].id;
 if (!state.plans.some((p) => p.id === state.curId)) state.curId = state.plans[0].id;
 if (!getFeaturedId()) setFeaturedId(state.curId);
 
@@ -40,11 +44,14 @@ function setPath(obj, path, value) {
 }
 
 // ---------- render ----------
+const TODAY = () => toISODate(new Date());
+const isPast = (p) => p.date < TODAY();
+const accent = (p) => themeById(p.theme).swatch[2];
+
 function render() {
-  const plan = cur();
-  document.body.dataset.theme = plan.theme;
+  document.body.dataset.theme = state.view === 'calendar' ? 'golden' : cur().theme;
   renderSide();
-  renderPanel();
+  if (state.view === 'calendar') renderCalendar(); else renderPanel();
 }
 
 function planMeta(p) {
@@ -53,22 +60,109 @@ function planMeta(p) {
 
 function renderSide() {
   const featured = getFeaturedId();
-  $('#side').innerHTML = `
-    <div class="eyebrow" style="margin:4px 4px 12px">Date nights</div>
-    ${state.plans.slice().sort((a, b) => a.date.localeCompare(b.date)).map((p) => `
-      <button class="plan-link ${p.id === state.curId ? 'on' : ''}" data-act="select" data-id="${p.id}">
-        <b>${p.id === featured ? '<span class="star" title="Showing on home page">★</span> ' : ''}${esc(p.title || 'Untitled')}</b>
+  const sorted = state.plans.slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  const upcoming = sorted.filter((p) => !isPast(p));
+  const past = sorted.filter(isPast).reverse();
+  const link = (p) => `
+      <button class="plan-link ${state.view === 'edit' && p.id === state.curId ? 'on' : ''}" data-act="select" data-id="${p.id}">
+        <b>${p.id === featured ? '<span class="star" title="Home page">★</span> ' : ''}${esc(p.title || 'Untitled')}</b>
         <small>${esc(planMeta(p))}</small>
-      </button>`).join('')}
-    <div style="display:grid;gap:6px;margin-top:14px">
-      <button class="btn small" data-act="new-plan">+ New date night</button>
-      <button class="btn small ghost" data-act="sample-plan">Add sample plan</button>
-    </div>`;
+      </button>`;
+  $('#side').innerHTML = `
+    <button class="plan-link ${state.view === 'calendar' ? 'on' : ''}" data-act="view-cal"><b>Calendar</b></button>
+    <button class="plan-link" data-act="new-plan"><b>+ New date</b></button>
+    ${upcoming.length ? `<div class="eyebrow side-group">Upcoming</div>${upcoming.map(link).join('')}` : ''}
+    ${past.length ? `<div class="eyebrow side-group">Past</div>${past.map(link).join('')}` : ''}`;
+  const opt = (p) => `<option value="${p.id}" ${state.view === 'edit' && p.id === state.curId ? 'selected' : ''}>${p.id === featured ? '★ ' : ''}${esc(p.title || 'Untitled')}</option>`;
   $('#mobile-switch').innerHTML = `
-    <select id="plan-select" aria-label="Choose date night">
-      ${state.plans.map((p) => `<option value="${p.id}" ${p.id === state.curId ? 'selected' : ''}>${p.id === featured ? '★ ' : ''}${esc(p.title || 'Untitled')}</option>`).join('')}
+    <select id="plan-select" aria-label="Date">
+      <option value="__cal" ${state.view === 'calendar' ? 'selected' : ''}>Calendar</option>
+      ${upcoming.length ? `<optgroup label="Upcoming">${upcoming.map(opt).join('')}</optgroup>` : ''}
+      ${past.length ? `<optgroup label="Past">${past.map(opt).join('')}</optgroup>` : ''}
     </select>
-    <button class="btn icon" data-act="new-plan" aria-label="New date night">+</button>`;
+    <button class="btn icon" data-act="new-plan" aria-label="New date">+</button>`;
+}
+
+// ---------- calendar ----------
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const addDays = (iso, n) => { const d = dateFromISO(iso); d.setDate(d.getDate() + n); return toISODate(d); };
+const plansOn = (iso) => state.plans.filter((p) => p.date === iso).sort((a, b) => a.startTime.localeCompare(b.startTime));
+const timeRange = (p) => {
+  const sc = schedule(p);
+  return `${fmtTime(parseHM(p.startTime))}${sc.length ? ` – ${fmtTime(sc[sc.length - 1].end)}` : ''}`;
+};
+
+function renderCalendar() {
+  const { mode, cursor } = state.cal;
+  const c = dateFromISO(cursor);
+  let title, eyebrow, body;
+  if (mode === 'month') {
+    title = MONTHS[c.getMonth()]; eyebrow = String(c.getFullYear());
+    const first = new Date(c.getFullYear(), c.getMonth(), 1);
+    const gridStart = addDays(toISODate(first), -first.getDay());
+    const daysInMonth = new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate();
+    const cells = Math.ceil((first.getDay() + daysInMonth) / 7) * 7;
+    body = `<div class="cal-grid">${DOW.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
+      ${Array.from({ length: cells }, (_, i) => {
+        const iso = addDays(gridStart, i); const d = dateFromISO(iso); const ps = plansOn(iso);
+        const cls = [d.getMonth() !== c.getMonth() && 'out', iso < TODAY() && 'past', iso === TODAY() && 'today', iso === state.cal.sel && 'sel'].filter(Boolean).join(' ');
+        return `<button class="cal-day ${cls}" data-act="cal-sel" data-date="${iso}" aria-label="${esc(fmtLongDate(iso))}${ps.length ? `, ${ps.length} date${ps.length > 1 ? 's' : ''}` : ''}">
+          <span class="n">${d.getDate()}</span>
+          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill" style="--c:${accent(p)}">${esc(p.title || 'Untitled')}</span>`).join('')}</span>
+        </button>`;
+      }).join('')}</div>
+      ${dayList(state.cal.sel)}`;
+  } else {
+    const start = addDays(cursor, -c.getDay());
+    const end = dateFromISO(addDays(start, 6));
+    const s0 = dateFromISO(start);
+    title = s0.getMonth() === end.getMonth() ? `${MONTHS[s0.getMonth()].slice(0, 3)} ${s0.getDate()} – ${end.getDate()}`
+      : `${MONTHS[s0.getMonth()].slice(0, 3)} ${s0.getDate()} – ${MONTHS[end.getMonth()].slice(0, 3)} ${end.getDate()}`;
+    eyebrow = String(end.getFullYear());
+    body = `<div class="week">${Array.from({ length: 7 }, (_, i) => {
+      const iso = addDays(start, i); const d = dateFromISO(iso); const ps = plansOn(iso);
+      const cls = [iso < TODAY() && 'past', iso === TODAY() && 'today'].filter(Boolean).join(' ');
+      return `<div class="wk-row ${cls}">
+        <div class="wk-date"><small>${d.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${d.getDate()}</b></div>
+        <div class="wk-plans">
+          ${ps.map((p) => `<button class="wk-plan" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
+            <b>${esc(p.title || 'Untitled')}</b>
+            <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x) => {
+              const o = x.item.options.find((q) => q.id === x.item.chosen) || (x.item.options.length === 1 ? x.item.options[0] : null);
+              return `<li><span>${fmtTime(x.start)}</span>${esc(o?.name || x.item.title)}</li>`;
+            }).join('')}</ol>
+          </button>`).join('')}
+          ${ps.length ? '' : `<button class="wk-add" data-act="new-on" data-date="${iso}">+</button>`}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  main.innerHTML = `
+    <div class="cal-head">
+      <div><div class="eyebrow">${eyebrow}</div><h1 class="display">${title}</h1></div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="View">
+          <button data-act="cal-mode" data-mode="week" aria-pressed="${mode === 'week'}">Week</button>
+          <button data-act="cal-mode" data-mode="month" aria-pressed="${mode === 'month'}">Month</button>
+        </div>
+        <button class="btn icon" data-act="cal-step" data-d="-1" aria-label="Previous">‹</button>
+        <button class="btn small" data-act="cal-today">Today</button>
+        <button class="btn icon" data-act="cal-step" data-d="1" aria-label="Next">›</button>
+      </div>
+    </div>
+    ${body}`;
+}
+
+function dayList(iso) {
+  const ps = plansOn(iso);
+  return `<div class="day-list">
+    <h3>${esc(fmtLongDate(iso))}</h3>
+    ${ps.map((p) => `<button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
+      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
+    </button>`).join('')}
+    <div><button class="btn small" data-act="new-on" data-date="${iso}">+ New date</button></div>
+  </div>`;
 }
 
 function renderPanel() {
@@ -78,11 +172,11 @@ function renderPanel() {
   main.innerHTML = `
     <div class="p-head">
       <div>
-        <div class="eyebrow">${esc(fmtLongDate(plan.date))}${featured ? ' · ★ on home page' : ''}</div>
+        <div class="eyebrow">${esc(fmtLongDate(plan.date))}${isPast(plan) ? ' · Past' : ''}${featured ? ' · ★ Home' : ''}</div>
         <h1 class="display">${esc(plan.title || 'Untitled')}</h1>
       </div>
       <div class="toolbar">
-        ${featured ? '' : '<button class="btn small" data-act="feature">★ Show on home</button>'}
+        ${featured ? '' : '<button class="btn small" data-act="feature">★ Home</button>'}
         <button class="btn small ghost" data-act="duplicate">Duplicate</button>
         <button class="btn small ghost" data-act="delete-plan">Delete</button>
       </div>
@@ -104,27 +198,25 @@ const area = (label, bind, value, attrs = '') =>
 function detailsTab(plan) {
   return `
   <section class="p-card">
-    <h3>The basics</h3>
-    <p class="hint">What she sees at the top of the invitation.</p>
+    <h3>Details</h3>
     <div class="grid2">
-      ${field('Title', 'title', plan.title, 'placeholder="A Golden Evening" data-rerender-head')}
+      ${field('Title', 'title', plan.title, 'data-rerender-head')}
       <label class="field"><span>Date</span><input type="date" data-bind="date" value="${esc(plan.date)}" data-rerender></label>
       <label class="field"><span>Start time</span><input type="time" data-bind="startTime" value="${esc(plan.startTime)}" step="300" data-rerender></label>
-      <label class="field"><span>Area (for weather)</span>
-        <input id="geo-q" value="${esc(plan.location?.name || '')}" placeholder="Search a city or neighborhood" autocomplete="off"></label>
+      <label class="field"><span>Area</span>
+        <input id="geo-q" value="${esc(plan.location?.name || '')}" placeholder="City" autocomplete="off"></label>
     </div>
     <div class="geo-results" id="geo-results">${state.geo.map((g, i) => `<button data-act="geo-pick" data-i="${i}">${esc(g.name)}</button>`).join('')}</div>
-    <div style="margin-top:12px">${area('Invitation note', 'invite', plan.invite, 'placeholder="A little note she reads first…"')}</div>
+    <div style="margin-top:12px">${area('Note', 'invite', plan.invite, 'rows="2"')}</div>
   </section>
   <section class="p-card">
     <h3>Theme</h3>
-    <p class="hint">Sets the colors, type and mood of her page.</p>
     <div class="theme-grid">
       ${THEMES.map((t) => `
         <button class="theme-card" data-act="theme" data-id="${t.id}" aria-pressed="${plan.theme === t.id}">
           <div class="sw">${t.swatch.map((c) => `<span style="background:${c}"></span>`).join('')}
             <span style="color:${t.swatch[2]};position:absolute;inset:0;pointer-events:none">${EMBLEMS[t.emblem]}</span></div>
-          <div class="tx"><b>${t.name}</b><small>${t.mood}</small></div>
+          <div class="tx"><b>${t.name}</b></div>
         </button>`).join('')}
     </div>
   </section>`;
@@ -133,7 +225,7 @@ function detailsTab(plan) {
 // ---------- timeline ----------
 const FILTERS = [
   ['all', 'All'], ['food', 'Food & drink'], ['activity', 'Activities'], ['travel', 'Travel'],
-  ['resv', 'Needs reservation'], ['choices', 'Has choices'],
+  ['resv', 'Reservations'], ['choices', 'Choices'],
 ];
 function matchesFilter(it) {
   switch (state.filter) {
@@ -154,8 +246,8 @@ function timelineTab(plan) {
   <section class="p-card">
     <div class="toolbar" style="margin-bottom:12px">
       <div>
-        <h3 class="display" style="margin:0;font-size:24px">Time blocks</h3>
-        <div class="time-sum">${sched.length ? `${fmtTime(parseHM(plan.startTime))} – ${fmtTime(sched[sched.length - 1].end)} · ${fmtDuration(total)}` : 'Nothing planned yet'}</div>
+        <h3 class="display" style="margin:0;font-size:24px">Timeline</h3>
+        <div class="time-sum">${sched.length ? `${fmtTime(parseHM(plan.startTime))} – ${fmtTime(sched[sched.length - 1].end)} · ${fmtDuration(total)}` : '—'}</div>
       </div>
       <span class="spacer"></span>
       <label class="field" style="grid-auto-flow:column;align-items:center;gap:8px"><span>Starts</span>
@@ -165,7 +257,7 @@ function timelineTab(plan) {
       ${FILTERS.map(([id, label]) => `<button class="chip" data-act="filter" data-id="${id}" aria-pressed="${state.filter === id}">${label}</button>`).join('')}
     </div>
     <div class="items" id="items">
-      ${rows.length ? rows.map((r) => itemHTML(plan, r)).join('') : `<div class="empty"><div class="display">${sched.length ? 'Nothing matches' : 'A blank evening'}</div>${sched.length ? 'Try another filter.' : 'Add your first stop below — or paste a plan from Claude on the Share tab.'}</div>`}
+      ${rows.length ? rows.map((r) => itemHTML(plan, r)).join('') : `<div class="empty">${sched.length ? 'No matches' : 'Empty'}</div>`}
     </div>
     <div class="add-row" style="margin-top:14px">
       ${Object.entries(ITEM_TYPES).map(([k, v]) => `<button class="btn small" data-act="add-item" data-type="${k}">+ ${v.label}</button>`).join('')}
@@ -213,7 +305,7 @@ function itemHTML(plan, { item: it, start, end, i }) {
         </select></label>
         <label class="field"><span>Minutes</span><input type="number" min="5" step="5" inputmode="numeric" data-bind="${p}.duration" data-num data-rerender value="${it.duration}"></label>
       </div>
-      ${area('Notes for her', `${p}.notes`, it.notes, 'rows="2"')}
+      ${area('Notes', `${p}.notes`, it.notes, 'rows="2"')}
       ${it.type === 'travel' ? '' : optionsHTML(it, p)}
       ${it.type === 'travel' ? '' : reservationHTML(it, p)}
       <div class="toolbar"><span class="spacer"></span>
@@ -226,31 +318,30 @@ function itemHTML(plan, { item: it, start, end, i }) {
 
 function optionsHTML(it, p) {
   return `
-    <div class="sub">Places & options</div>
-    <p class="muted" style="margin:0;font-size:13px">Add one place, or several to let her choose. Hidden options are filtered out of her page.</p>
+    <div class="sub">Places</div>
     ${it.options.map((o, j) => `
       <div class="opt-edit ${o.hidden ? 'is-hidden' : ''}">
         <div class="grid2">
-          ${field('Name', `${p}.options.${j}.name`, o.name, 'placeholder="Restaurant or place" data-rerender-head')}
-          ${field('Address / area', `${p}.options.${j}.address`, o.address)}
-          ${field('Website or menu link', `${p}.options.${j}.url`, o.url, 'type="url" inputmode="url" placeholder="https://"')}
+          ${field('Name', `${p}.options.${j}.name`, o.name, 'data-rerender-head')}
+          ${field('Address', `${p}.options.${j}.address`, o.address)}
+          ${field('Link', `${p}.options.${j}.url`, o.url, 'type="url" inputmode="url" placeholder="https://"')}
           <label class="field"><span>Price</span><select data-bind="${p}.options.${j}.price">
             ${PRICES.map((pr) => `<option value="${pr}" ${o.price === pr ? 'selected' : ''}>${pr || '—'}</option>`).join('')}</select></label>
-          ${field('Cuisine / tags', `${p}.options.${j}.tags`, o.tags, 'placeholder="Italian, cozy, rooftop"')}
-          ${field('Note', `${p}.options.${j}.note`, o.note, 'placeholder="Why it\'s special"')}
+          ${field('Tags', `${p}.options.${j}.tags`, o.tags)}
+          ${field('Note', `${p}.options.${j}.note`, o.note)}
         </div>
         <div class="row">
-          <label class="check"><input type="checkbox" data-bind="${p}.options.${j}.hidden" ${o.hidden ? 'checked' : ''} data-rerender> Hide from her</label>
-          ${it.options.length > 1 ? `<label class="check"><input type="radio" name="chosen-${it.id}" data-act="chosen" data-i="${p.split('.')[1]}" data-id="${o.id}" ${it.chosen === o.id ? 'checked' : ''}> Lock in</label>` : ''}
+          <label class="check"><input type="checkbox" data-bind="${p}.options.${j}.hidden" ${o.hidden ? 'checked' : ''} data-rerender> Hide</label>
+          ${it.options.length > 1 ? `<label class="check"><input type="radio" name="chosen-${it.id}" data-act="chosen" data-i="${p.split('.')[1]}" data-id="${o.id}" ${it.chosen === o.id ? 'checked' : ''}> Pick</label>` : ''}
           <span class="spacer"></span>
-          ${o.name ? `<a class="chip" href="${esc(mapsUrl(o))}" target="_blank" rel="noopener">Map ↗</a>` : ''}
-          ${o.name ? `<a class="chip" href="${esc(searchUrl(o.name + ' ' + (o.address || '')))}" target="_blank" rel="noopener">Reviews ↗</a>` : ''}
+          ${o.name ? `<a class="chip" href="${esc(mapsUrl(o))}" target="_blank" rel="noopener">Map</a>` : ''}
+          ${o.name ? `<a class="chip" href="${esc(searchUrl(o.name + ' ' + (o.address || '')))}" target="_blank" rel="noopener">Reviews</a>` : ''}
           <button class="chip" data-act="del-opt" data-i="${p.split('.')[1]}" data-j="${j}">Remove</button>
         </div>
       </div>`).join('')}
     <div class="toolbar">
-      <button class="btn small" data-act="add-opt" data-i="${p.split('.')[1]}">+ Add ${it.options.length ? 'another option' : 'a place'}</button>
-      ${it.chosen ? `<button class="btn small ghost" data-act="unlock" data-i="${p.split('.')[1]}">Let her choose</button>` : ''}
+      <button class="btn small" data-act="add-opt" data-i="${p.split('.')[1]}">+ ${it.options.length ? 'Option' : 'Place'}</button>
+      ${it.chosen ? `<button class="btn small ghost" data-act="unlock" data-i="${p.split('.')[1]}">Unpick</button>` : ''}
     </div>`;
 }
 
@@ -259,21 +350,20 @@ function reservationHTML(it, p) {
   const name = (it.options.find((o) => o.id === it.chosen) || it.options[0])?.name || it.title;
   return `
     <div class="resv">
-      <label class="check"><input type="checkbox" data-bind="${p}.reservation.needed" ${r.needed ? 'checked' : ''} data-rerender> Needs a reservation or tickets</label>
+      <label class="check"><input type="checkbox" data-bind="${p}.reservation.needed" ${r.needed ? 'checked' : ''} data-rerender> Reservation</label>
       ${r.needed ? `
         <div class="grid2">
           <label class="field"><span>Status</span><select data-bind="${p}.reservation.status" data-rerender>
-            ${[['none', 'Not booked yet'], ['pending', 'Working on it'], ['booked', 'Booked ✓']].map(([v, l]) => `<option value="${v}" ${r.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+            ${[['none', 'Not booked'], ['pending', 'Pending'], ['booked', 'Booked']].map(([v, l]) => `<option value="${v}" ${r.status === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select></label>
-          ${field('Details (time, party, confirmation #)', `${p}.reservation.details`, r.details, 'placeholder="7:00 PM · 2 people · #A1B2"')}
-          ${field('Booking link', `${p}.reservation.url`, r.url, 'type="url" inputmode="url" placeholder="https://"')}
+          ${field('Details', `${p}.reservation.details`, r.details, 'placeholder="7:00 PM · 2"')}
+          ${field('Link', `${p}.reservation.url`, r.url, 'type="url" inputmode="url" placeholder="https://"')}
         </div>
         <div class="row">
-          <span class="muted" style="font-size:13px">Book:</span>
-          ${safeUrl(r.url) ? `<a class="btn small primary" href="${esc(r.url)}" target="_blank" rel="noopener">Open booking link ↗</a>` : ''}
-          <a class="chip" href="${esc(openTableUrl(name))}" target="_blank" rel="noopener">OpenTable ↗</a>
-          <a class="chip" href="${esc(resyUrl(name))}" target="_blank" rel="noopener">Resy ↗</a>
-          <a class="chip" href="${esc(searchUrl(name + ' reservations'))}" target="_blank" rel="noopener">Search ↗</a>
+          ${safeUrl(r.url) ? `<a class="btn small primary" href="${esc(r.url)}" target="_blank" rel="noopener">Book</a>` : ''}
+          <a class="chip" href="${esc(openTableUrl(name))}" target="_blank" rel="noopener">OpenTable</a>
+          <a class="chip" href="${esc(resyUrl(name))}" target="_blank" rel="noopener">Resy</a>
+          <a class="chip" href="${esc(searchUrl(name + ' reservations'))}" target="_blank" rel="noopener">Search</a>
         </div>` : ''}
     </div>`;
 }
@@ -283,31 +373,29 @@ function outfitsTab(plan) {
   const o = plan.outfit;
   return `
   <section class="p-card">
-    <h3>Dress code & colors</h3>
-    <p class="hint">Sets the vibe on her page. She can heart your ideas and tell you what she's wearing.</p>
-    ${field('Dress code', 'outfit.dressCode', o.dressCode, 'placeholder="Smart casual, warm layers"')}
-    <div class="field" style="margin-top:12px"><span>Color story</span>
+    <h3>Dress code</h3>
+    ${field('', 'outfit.dressCode', o.dressCode, 'aria-label="Dress code"')}
+    <div class="field" style="margin-top:12px"><span>Colors</span>
       <div class="swatch-row">
         ${o.palette.map((c, i) => `<label><input type="color" value="${esc(c)}" data-bind="outfit.palette.${i}" aria-label="Color ${i + 1}">
           <button class="x" data-act="del-color" data-i="${i}" aria-label="Remove color">×</button></label>`).join('')}
-        <button class="btn small" data-act="add-color">+ Color</button>
-        <button class="btn small ghost" data-act="theme-colors">Use theme colors</button>
+        <button class="btn small" data-act="add-color">+</button>
+        <button class="btn small ghost" data-act="theme-colors">Theme colors</button>
       </div>
     </div>
   </section>
   <section class="p-card">
-    <h3>What I'm wearing</h3>
-    ${area('', 'outfit.me', o.me, 'placeholder="Navy blazer, white tee, dark denim…" aria-label="What I\'m wearing"')}
+    <h3>I'm wearing</h3>
+    ${area('', 'outfit.me', o.me, 'aria-label="I\'m wearing"')}
   </section>
   <section class="p-card">
-    <h3>Ideas for her</h3>
-    <p class="hint">Suggestions she can tap to like.</p>
+    <h3>Ideas</h3>
     <div class="list-edit">
       ${o.suggestions.map((s, i) => `<div class="row"><input data-bind="outfit.suggestions.${i}" value="${esc(s)}" aria-label="Suggestion ${i + 1}">
         <button class="btn icon ghost" data-act="del-sugg" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}
-      <div><button class="btn small" data-act="add-sugg">+ Add idea</button></div>
+      <div><button class="btn small" data-act="add-sugg">+ Idea</button></div>
     </div>
-    <div style="margin-top:12px">${field('Inspiration link (Pinterest board, etc.)', 'outfit.inspo', o.inspo, 'type="url" inputmode="url" placeholder="https://"')}</div>
+    <div style="margin-top:12px">${field('Inspiration link', 'outfit.inspo', o.inspo, 'type="url" inputmode="url" placeholder="https://"')}</div>
   </section>`;
 }
 
@@ -316,29 +404,27 @@ function shareTab(plan) {
   const featured = getFeaturedId() === plan.id;
   return `
   <section class="p-card">
-    <h3>Send it to her</h3>
-    <p class="hint">The link carries the whole plan, so it works on her phone. Make a new link after you change anything.</p>
-    <div class="share-link"><input id="share-url" readonly placeholder="Tap “Make link”" aria-label="Share link">
+    <h3>Link</h3>
+    <p class="hint">Make a new link after edits.</p>
+    <div class="share-link"><input id="share-url" readonly aria-label="Share link">
       <button class="btn primary" data-act="make-link">Make link</button></div>
     <div class="toolbar" style="margin-top:10px">
       <button class="btn small" data-act="native-share">Share…</button>
-      <button class="btn small ghost" data-act="open-link">Open it</button>
+      <button class="btn small ghost" data-act="open-link">Open</button>
     </div>
   </section>
   <section class="p-card">
     <h3>Home page</h3>
-    <p class="hint">On this device, the home page (index.html with no link) shows the starred plan.</p>
-    ${featured ? '<p style="margin:0">★ This plan is on the home page.</p>' : '<button class="btn" data-act="feature">★ Show this plan on the home page</button>'}
+    ${featured ? '<p style="margin:0">★ Showing on home page</p>' : '<button class="btn" data-act="feature">★ Show on home page</button>'}
   </section>
   <section class="p-card">
-    <h3>Plan with Claude</h3>
-    <p class="hint">Copy this plan, paste it to Claude with what you'd like changed, then paste the JSON Claude sends back below.</p>
-    <div class="toolbar"><button class="btn small" data-act="export">Copy plan as JSON</button></div>
-    <label class="field" style="margin-top:14px"><span>Paste a plan (JSON)</span>
-      <textarea id="import-json" rows="6" placeholder='{"title": "…", "date": "2026-12-12", "items": [ … ]}' style="font-family:ui-monospace,monospace;font-size:13px"></textarea></label>
+    <h3>JSON</h3>
+    <div class="toolbar"><button class="btn small" data-act="export">Copy</button></div>
+    <label class="field" style="margin-top:14px"><span>Paste</span>
+      <textarea id="import-json" rows="6" style="font-family:ui-monospace,monospace;font-size:13px"></textarea></label>
     <div class="toolbar" style="margin-top:10px">
-      <button class="btn small primary" data-act="import-replace">Replace this plan</button>
-      <button class="btn small" data-act="import-new">Add as new plan</button>
+      <button class="btn small primary" data-act="import-replace">Replace</button>
+      <button class="btn small" data-act="import-new">Add new</button>
     </div>
   </section>`;
 }
@@ -377,7 +463,10 @@ function geoSearch(q) {
 }
 
 document.addEventListener('change', (e) => {
-  if (e.target.id === 'plan-select') { state.curId = e.target.value; state.open.clear(); render(); }
+  if (e.target.id !== 'plan-select') return;
+  if (e.target.value === '__cal') state.view = 'calendar';
+  else { state.curId = e.target.value; state.view = 'edit'; state.open.clear(); }
+  render();
 });
 
 document.addEventListener('click', async (e) => {
@@ -388,9 +477,21 @@ document.addEventListener('click', async (e) => {
   const structural = () => { persist(); renderSide(); renderPanel(); };
 
   switch (act) {
-    case 'select': state.curId = b.dataset.id; state.open.clear(); render(); window.scrollTo(0, 0); break;
-    case 'new-plan': { const p = blankPlan(); state.plans.push(p); state.curId = p.id; state.tab = 'details'; persist(); render(); break; }
-    case 'sample-plan': { const p = samplePlan(); state.plans.push(p); state.curId = p.id; persist(); render(); break; }
+    case 'select': state.curId = b.dataset.id; state.view = 'edit'; state.open.clear(); render(); window.scrollTo(0, 0); break;
+    case 'new-plan':
+    case 'new-on': {
+      const p = blankPlan(); if (b.dataset.date) p.date = b.dataset.date;
+      state.plans.push(p); state.curId = p.id; state.view = 'edit'; state.tab = 'details'; persist(); render(); window.scrollTo(0, 0); break;
+    }
+    case 'view-cal': state.view = 'calendar'; render(); break;
+    case 'cal-mode': state.cal.mode = b.dataset.mode; state.cal.cursor = state.cal.sel || state.cal.cursor; render(); break;
+    case 'cal-step': {
+      const c = dateFromISO(state.cal.cursor);
+      if (state.cal.mode === 'month') { c.setDate(1); c.setMonth(c.getMonth() + d); } else c.setDate(c.getDate() + 7 * d);
+      state.cal.cursor = toISODate(c); render(); break;
+    }
+    case 'cal-today': state.cal.cursor = state.cal.sel = TODAY(); render(); break;
+    case 'cal-sel': state.cal.sel = b.dataset.date; state.cal.cursor = b.dataset.date; render(); break;
     case 'duplicate': {
       const p = normalizePlan(JSON.parse(JSON.stringify(plan)));
       p.id = uid(); p.title = `${plan.title} (copy)`;
@@ -400,15 +501,15 @@ document.addEventListener('click', async (e) => {
       if (!confirm(`Delete “${plan.title}”? This can't be undone.`)) break;
       state.plans = state.plans.filter((p) => p.id !== plan.id);
       if (!state.plans.length) state.plans.push(blankPlan());
-      state.curId = state.plans[0].id;
+      state.curId = state.plans[0].id; state.view = 'calendar';
       if (getFeaturedId() === plan.id) setFeaturedId(state.curId);
       savePlans(state.plans); render(); break;
-    case 'feature': setFeaturedId(plan.id); render(); toast('Now showing on the home page'); break;
+    case 'feature': setFeaturedId(plan.id); render(); toast('On home page'); break;
     case 'tab': state.tab = b.dataset.tab; renderPanel(); break;
     case 'theme': plan.theme = b.dataset.id; document.body.dataset.theme = plan.theme; structural(); break;
     case 'geo-pick': {
       const g = state.geo[i]; plan.location = { name: g.name, lat: g.lat, lon: g.lon };
-      state.geo = []; structural(); toast(`Weather set to ${g.name}`); break;
+      state.geo = []; structural(); toast(g.name); break;
     }
     case 'filter': state.filter = b.dataset.id; renderPanel(); break;
     case 'toggle': {
@@ -459,24 +560,24 @@ document.addEventListener('click', async (e) => {
     }
     case 'native-share': {
       const url = await shareUrl(plan); $('#share-url').value = url;
-      if (navigator.share) { try { await navigator.share({ title: plan.title, text: 'I planned a date for us ♡', url }); } catch { /* cancelled */ } }
+      if (navigator.share) { try { await navigator.share({ title: plan.title, url }); } catch { /* cancelled */ } }
       else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
       break;
     }
     case 'open-link': window.open(await shareUrl(plan), '_blank', 'noopener'); break;
     case 'export': {
       const { updatedAt, ...rest } = plan;
-      try { await navigator.clipboard.writeText(JSON.stringify(rest, null, 2)); toast('Plan copied — paste it to Claude'); } catch { toast('Could not copy'); }
+      try { await navigator.clipboard.writeText(JSON.stringify(rest, null, 2)); toast('Copied'); } catch { toast('Could not copy'); }
       break;
     }
     case 'import-replace':
     case 'import-new': {
       let data;
-      try { data = JSON.parse($('#import-json').value.replace(/^```(json)?|```$/gm, '').trim()); } catch { toast('That JSON didn’t parse'); break; }
+      try { data = JSON.parse($('#import-json').value.replace(/^```(json)?|```$/gm, '').trim()); } catch { toast('Invalid JSON'); break; }
       const p = normalizePlan(data);
       if (act === 'import-replace') { p.id = plan.id; state.plans[state.plans.indexOf(plan)] = p; }
       else { p.id = uid(); state.plans.push(p); state.curId = p.id; }
-      state.tab = 'timeline'; persist(); render(); toast('Plan imported'); break;
+      state.tab = 'timeline'; persist(); render(); toast('Imported'); break;
     }
     default: break;
   }

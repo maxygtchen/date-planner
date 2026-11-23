@@ -63,14 +63,13 @@ export async function geocode(query) {
   }));
 }
 
-// A gentle outfit hint based on the forecast.
+// A short, practical note based on the forecast.
 export function weatherTip(w, rain = w?.rain) {
   if (!w || w.status !== 'ok') return '';
   const [, kind] = describe(w.code);
-  if (kind === 'storm' || rain >= 50) return 'Rain is likely — bring an umbrella and skip suede.';
-  if (kind === 'snow') return 'Snow in the forecast — boots and a warm coat.';
-  if (w.low < 45) return 'A chilly evening — layer up and bring a scarf.';
-  if (w.low < 58) return 'Cool once the sun goes down — bring a jacket.';
-  if (w.high > 85) return 'Warm out — light, breathable layers.';
-  return 'Comfortable weather — dress for the vibe.';
+  if (kind === 'storm' || rain >= 50) return 'Bring an umbrella.';
+  if (kind === 'snow') return 'Wear boots.';
+  if (w.low < 45) return 'Bring a warm coat.';
+  if (w.low < 58) return 'Bring a jacket.';
+  return '';
 }

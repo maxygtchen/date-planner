@@ -20,8 +20,8 @@ export const PRICES = ['', '$', '$$', '$$$', '$$$$'];
 export function samplePlan() {
   return {
     id: uid(),
-    title: 'A Golden Evening',
-    invite: 'Clear your Saturday. I planned something slow and sweet — just us, good food, and the city at sunset.',
+    title: 'Saturday Night',
+    invite: 'Keep Saturday free.',
     date: '2026-12-05',
     startTime: '16:00',
     location: { name: 'San Francisco, CA', lat: 37.7749, lon: -122.4194 },
@@ -29,8 +29,8 @@ export function samplePlan() {
     items: [
       {
         id: uid(), type: 'activity', title: 'Sunset walk at Lands End', duration: 75,
-        notes: 'Coastal trail with views of the Golden Gate. Bring a layer — it gets breezy.',
-        options: [{ id: uid(), name: 'Lands End Trail', address: 'Lands End Trail, San Francisco', url: 'https://www.nps.gov/goga/planyourvisit/landsend.htm', price: '', tags: 'outdoors, views', note: '', hidden: false }],
+        notes: 'Bring a layer.',
+        options: [{ id: uid(), name: 'Lands End Trail', address: 'Lands End Trail, San Francisco', url: 'https://www.nps.gov/goga/planyourvisit/landsend.htm', price: '', tags: '', note: '', hidden: false }],
         chosen: null, reservation: { needed: false, status: 'none', url: '', details: '' },
       },
       {
@@ -39,27 +39,27 @@ export function samplePlan() {
       },
       {
         id: uid(), type: 'food', title: 'Dinner', duration: 105,
-        notes: 'Two favorites — pick the one that sounds best tonight.',
+        notes: '',
         options: [
-          { id: uid(), name: 'State Bird Provisions', address: '1529 Fillmore St, San Francisco', url: 'https://statebirdsf.com', price: '$$$', tags: 'Californian, dim-sum style', note: 'Small plates rolled out on carts', hidden: false },
-          { id: uid(), name: 'Nopa', address: '560 Divisadero St, San Francisco', url: 'https://nopasf.com', price: '$$', tags: 'Californian, wood-fired', note: 'Lively, warm, late kitchen', hidden: false },
+          { id: uid(), name: 'State Bird Provisions', address: '1529 Fillmore St, San Francisco', url: 'https://statebirdsf.com', price: '$$$', tags: 'Californian', note: '', hidden: false },
+          { id: uid(), name: 'Nopa', address: '560 Divisadero St, San Francisco', url: 'https://nopasf.com', price: '$$', tags: 'Californian', note: '', hidden: false },
         ],
         chosen: null,
-        reservation: { needed: true, status: 'pending', url: 'https://www.opentable.com/s?term=State%20Bird%20Provisions', details: 'Aim for 6:00 PM, table for 2' },
+        reservation: { needed: true, status: 'pending', url: 'https://www.opentable.com/s?term=State%20Bird%20Provisions', details: '6:00 PM, 2 people' },
       },
       {
-        id: uid(), type: 'drinks', title: 'Nightcap', duration: 60, notes: 'Something cozy to end the night.',
+        id: uid(), type: 'drinks', title: 'Nightcap', duration: 60, notes: '',
         options: [
-          { id: uid(), name: "Smuggler's Cove", address: '650 Gough St, San Francisco', url: 'https://www.smugglerscovesf.com', price: '$$', tags: 'tiki, rum', note: '', hidden: false },
+          { id: uid(), name: "Smuggler's Cove", address: '650 Gough St, San Francisco', url: 'https://www.smugglerscovesf.com', price: '$$', tags: '', note: '', hidden: false },
         ],
         chosen: null, reservation: { needed: false, status: 'none', url: '', details: '' },
       },
     ],
     outfit: {
-      dressCode: 'Smart casual with warm layers — it gets windy by the water.',
+      dressCode: 'Smart casual. Warm layers.',
       palette: ['#2d241d', '#c27a35', '#efe2cf', '#7d8a68'],
-      me: 'Camel overcoat, cream knit sweater, dark denim, brown leather boots.',
-      suggestions: ['A long wool coat over a knit dress', 'Earth tones — camel, cream, olive', 'Comfortable shoes for the trail walk', 'A scarf for the sunset breeze'],
+      me: 'Camel coat, cream sweater, dark denim.',
+      suggestions: ['Long coat', 'Earth tones', 'Comfortable shoes'],
       inspo: '',
     },
     updatedAt: Date.now(),

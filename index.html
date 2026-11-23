@@ -20,33 +20,31 @@
   <div class="home" id="app">
     <header class="hero" id="hero"></header>
 
-    <nav class="jump" aria-label="Sections">
-      <a href="#plan" class="on">Plan</a>
-      <a href="#weather">Weather</a>
-      <a href="#outfits">What to wear</a>
-    </nav>
+    <div class="jump-wrap">
+      <nav class="jump" aria-label="Sections">
+        <a href="#plan" data-sec="plan" class="on">Plan</a>
+        <a href="#weather" data-sec="weather">Weather</a>
+        <a href="#outfits" data-sec="outfits">Wear</a>
+      </nav>
+    </div>
 
     <div class="layout">
-      <section id="plan" aria-labelledby="plan-h">
-        <div class="section-title"><h2 id="plan-h">The evening</h2><span class="eyebrow" id="plan-span"></span></div>
+      <section id="plan" aria-label="Plan">
         <ol class="timeline" id="timeline"></ol>
       </section>
 
       <aside>
         <section id="weather" class="card weather" aria-label="Weather"></section>
-        <section id="outfits" class="card outfit" aria-label="What to wear"></section>
+        <section id="outfits" class="card outfit" aria-label="Wear"></section>
       </aside>
     </div>
 
-    <footer class="foot">
-      <div class="ornament" aria-hidden="true">♡</div>
-      <p>Made with love. <a href="planner.html">Planner</a></p>
-    </footer>
+    <footer class="foot"><div class="ornament" aria-hidden="true">♡</div></footer>
   </div>
 
   <div class="picks-bar" id="picks-bar" hidden>
-    <span id="picks-text">Your picks are saved</span>
-    <button class="btn small" id="send-picks" type="button">Send picks</button>
+    <span id="picks-text"></span>
+    <button class="btn small" id="send-picks" type="button">Send</button>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
