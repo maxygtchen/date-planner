@@ -72,6 +72,7 @@ export function blankPlan() {
     id: uid(), title: 'Untitled date night', favorite: false, date: toISODate(d), startTime: '18:00',
     location: { name: '', lat: null, lon: null }, theme: 'golden', items: [],
     outfit: { dressCode: '', palette: [], me: '', suggestions: [], inspo: '' },
+    labels: {},
     updatedAt: Date.now(),
   };
 }
@@ -84,6 +85,19 @@ export function newItem(type = 'activity') {
     reservation: { needed: false, status: 'none', url: '', details: '' },
   };
 }
+
+// Wording on her page; each can be rewritten per date in the planner.
+export const LABELS = {
+  plan: 'Plan', weather: 'Weather', wear: 'Wear', colors: 'Colors', meWearing: "I'm wearing",
+  ideas: 'Ideas', you: 'You', youPlaceholder: "What you're wearing", reserve: 'Reserve?',
+  yes: 'Yes', no: 'No', reserved: 'Reserved', send: 'Send',
+};
+export const LABEL_NAMES = {
+  plan: 'Plan tab', weather: 'Weather tab', wear: 'Wear tab', colors: 'Colors heading', meWearing: 'My outfit heading',
+  ideas: 'Ideas heading', you: 'Her outfit heading', youPlaceholder: 'Her outfit box', reserve: 'Reservation question',
+  yes: 'Yes button', no: 'No button', reserved: 'Reserved badge', send: 'Send button',
+};
+export const label = (plan, key) => (plan.labels?.[key] || '').trim() || LABELS[key];
 
 // Quick picks for outfit ideas.
 export const WARDROBE = ['White top', 'Black top', 'Blue jeans', 'Black jeans', 'Dress', 'Skirt', 'Sweater', 'Jacket', 'Coat', 'Sneakers', 'Boots', 'Heels'];
@@ -115,7 +129,7 @@ export const savePicks = (planId, picks) => safeSet(PICKS_PREFIX + planId, JSON.
 // Fill in any fields missing from older or hand-written plans (e.g. JSON pasted from Claude).
 export function normalizePlan(p) {
   const base = blankPlan();
-  const plan = { ...base, ...p, location: { ...base.location, ...(p.location || {}) }, outfit: { ...base.outfit, ...(p.outfit || {}) } };
+  const plan = { ...base, ...p, location: { ...base.location, ...(p.location || {}) }, outfit: { ...base.outfit, ...(p.outfit || {}) }, labels: { ...(p.labels || {}) } };
   plan.id = plan.id || uid();
   plan.items = (p.items || []).map((it) => {
     const b = newItem(it.type || 'activity');

@@ -1,10 +1,11 @@
 import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
-  WARDROBE, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=5';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=5';
-import { geocode } from './weather.js?v=5';
+  WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
+} from './store.js?v=6';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=6';
+import { geocode } from './weather.js?v=6';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -114,7 +115,7 @@ function renderCalendar() {
         const cls = [d.getMonth() !== c.getMonth() && 'out', iso < TODAY() && 'past', iso === TODAY() && 'today', iso === state.cal.sel && 'sel'].filter(Boolean).join(' ');
         return `<button class="cal-day ${cls}" data-act="cal-sel" data-date="${iso}" aria-label="${esc(fmtLongDate(iso))}${ps.length ? `, ${ps.length} date${ps.length > 1 ? 's' : ''}` : ''}">
           <span class="n">${d.getDate()}</span>
-          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Untitled')}</span>`).join('')}</span>
+          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" data-id="${p.id}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Untitled')}</span>`).join('')}</span>
         </button>`;
       }).join('')}</div>
       ${favHTML(c)}
@@ -129,10 +130,10 @@ function renderCalendar() {
     body = `<div class="week">${Array.from({ length: 7 }, (_, i) => {
       const iso = addDays(start, i); const d = dateFromISO(iso); const ps = plansOn(iso);
       const cls = [iso < TODAY() && 'past', iso === TODAY() && 'today'].filter(Boolean).join(' ');
-      return `<div class="wk-row ${cls}">
+      return `<div class="wk-row ${cls}" data-date="${iso}">
         <div class="wk-date"><small>${d.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${d.getDate()}</b></div>
         <div class="wk-plans">
-          ${ps.map((p) => `<div class="wk-item"><button class="wk-plan" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
+          ${ps.map((p) => `<div class="wk-item"><button class="wk-plan plan-row-drag" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
             <b>${esc(p.title || 'Untitled')}</b>
             <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x) => {
               const o = x.item.options.find((q) => q.id === x.item.chosen) || (x.item.options.length === 1 ? x.item.options[0] : null);
@@ -242,6 +243,12 @@ function detailsTab(plan) {
           <div class="tx"><b>${t.name}</b></div>
         </button>`).join('')}
     </div>
+  </section>
+  <section class="p-card">
+    <h3>Wording</h3>
+    <div class="grid2">
+      ${Object.keys(LABELS).map((k) => field(LABEL_NAMES[k], `labels.${k}`, plan.labels?.[k] || '', `placeholder="${esc(LABELS[k])}"`)).join('')}
+    </div>
   </section>`;
 }
 
@@ -304,7 +311,7 @@ function itemHTML(plan, { item: it, start, end, i }) {
   <article class="item" data-i="${i}" data-id="${it.id}">
     <div class="item-head">
       <div style="display:flex;align-items:center">
-        <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
+        <span class="grip" data-grip="${i}" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
         <div class="handle">
           <button data-act="move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move earlier">▲</button>
           <button data-act="move" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Move later">▼</button>
@@ -326,8 +333,9 @@ function itemHTML(plan, { item: it, start, end, i }) {
         <label class="field"><span>Type</span><select data-bind="${p}.type" data-rerender>
           ${Object.entries(ITEM_TYPES).map(([k, v]) => `<option value="${k}" ${it.type === k ? 'selected' : ''}>${v.label}</option>`).join('')}
         </select></label>
-        <label class="field"><span>Minutes</span><input type="number" min="5" step="5" inputmode="numeric" data-bind="${p}.duration" data-num data-rerender value="${it.duration}"></label>
       </div>
+      <label class="field"><span>Length · <b class="slide-val">${shortDur(it.duration)}</b></span>
+        <input type="range" class="slider" min="5" max="300" step="5" value="${Math.min(300, it.duration)}" data-slide="${i}" aria-label="Length in minutes"></label>
       ${area('Notes', `${p}.notes`, it.notes, 'rows="2"')}
       ${it.type === 'travel' ? '' : optionsHTML(it, p)}
       ${it.type === 'travel' ? '' : reservationHTML(it, p)}
@@ -471,7 +479,17 @@ main.addEventListener('input', (e) => {
     }
   }
 });
+main.addEventListener('input', (e) => {
+  const sl = e.target.closest('[data-slide]'); if (!sl) return;
+  const it = cur().items[Number(sl.dataset.slide)];
+  it.duration = Number(sl.value);
+  const item = sl.closest('.item');
+  item.querySelector('.slide-val').textContent = shortDur(it.duration);
+  item.querySelector('.dur span').textContent = shortDur(it.duration);
+  persist();
+});
 main.addEventListener('change', (e) => {
+  if (e.target.matches('[data-slide]')) { renderPanel(); return; }
   if (!e.target.dataset.bind || !('rerender' in e.target.dataset)) return;
   renderSide(); renderPanel(); document.body.dataset.theme = cur().theme;
 });
@@ -507,6 +525,12 @@ document.addEventListener('click', async (e) => {
       state.plans.push(p); state.curId = p.id; state.view = 'edit'; state.tab = 'details'; persist(); render(); window.scrollTo(0, 0); break;
     }
     case 'view-cal': state.view = 'calendar'; render(); break;
+    case 'open-builder': openBuilder(); break;
+    case 'close-builder': closeBuilder(); break;
+    case 'build': runBuild(b.dataset.mode); break;
+    case 'toggle-key': builder.showKey = !builder.showKey; renderSheet(); break;
+    case 'save-key': { const v = $('#claude-key').value.trim(); if (v && !v.startsWith('•')) { setKey(v); builder.showKey = false; toast('Key saved'); } renderSheet(); break; }
+    case 'clear-key': setKey(''); renderSheet(); break;
     case 'fav': {
       const p = state.plans.find((x) => x.id === b.dataset.id);
       const on = !p.favorite;
@@ -613,6 +637,7 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sheet.hidden) closeBuilder(); });
 main.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.id === 'sugg-new') {
     const v = e.target.value.trim();
@@ -622,39 +647,168 @@ main.addEventListener('keydown', (e) => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.item-title')) { e.preventDefault(); e.target.click(); }
 });
 
-// ---------- drag to reorder (desktop) ----------
-let dragFrom = null;
+// ---------- drag and drop (mouse and touch) ----------
+// Timeline: press the ⠿ handle and drag. Calendar: press and hold a date, then drop it on a day.
+let drag = null;
+let suppressClick = false;
+document.addEventListener('click', (e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; } }, true);
+document.addEventListener('touchmove', (e) => { if (drag?.active) e.preventDefault(); }, { passive: false });
+
 main.addEventListener('pointerdown', (e) => {
-  const grip = e.target.closest('.grip');
-  if (grip) grip.closest('.item').draggable = true;
+  const grip = e.target.closest('[data-grip]');
+  if (grip) {
+    e.preventDefault();
+    const el = grip.closest('.item');
+    drag = { kind: 'item', el, from: Number(el.dataset.i), y0: e.clientY, active: true, pid: e.pointerId };
+    el.classList.add('dragging');
+    grip.setPointerCapture?.(e.pointerId);
+    return;
+  }
+  const row = e.target.closest('.plan-row, .plan-row-drag, .cal-pill[data-id]');
+  if (row && state.view === 'calendar') {
+    const id = row.dataset.id;
+    drag = { kind: 'plan', id, x0: e.clientX, y0: e.clientY, active: false, pid: e.pointerId, label: row.querySelector('b')?.textContent || row.textContent };
+    // Touch needs a short hold so scrolling still works; a mouse starts on movement.
+    if (e.pointerType !== 'mouse') drag.timer = setTimeout(() => startPlanDrag(e.clientX, e.clientY), 320);
+  }
 });
-main.addEventListener('dragstart', (e) => {
-  const item = e.target.closest('.item'); if (!item) return;
-  dragFrom = Number(item.dataset.i); item.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', String(dragFrom));
+
+function startPlanDrag(x, y) {
+  if (!drag || drag.kind !== 'plan') return;
+  drag.active = true;
+  navigator.vibrate?.(10);
+  const g = document.createElement('div');
+  g.className = 'drag-ghost'; g.textContent = drag.label;
+  document.body.appendChild(g); drag.ghost = g;
+  document.body.classList.add('is-dragging');
+  movePlanDrag(x, y);
+}
+function movePlanDrag(x, y) {
+  drag.ghost.style.transform = `translate(${x + 12}px, ${y + 12}px)`;
+  document.querySelectorAll('.cal-day.drop').forEach((d) => d.classList.remove('drop'));
+  const day = document.elementFromPoint(x, y)?.closest('.cal-day[data-date], .wk-row[data-date]');
+  day?.classList.add('drop');
+  drag.over = day?.dataset.date || null;
+}
+
+document.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.pid) return;
+  if (drag.kind === 'item') {
+    const dy = e.clientY - drag.y0;
+    drag.el.style.transform = `translateY(${dy}px)`;
+    const items = [...main.querySelectorAll('.item')].filter((x) => x !== drag.el);
+    items.forEach((x) => x.classList.remove('drop-above', 'drop-below'));
+    let target = null;
+    for (const x of items) {
+      const r = x.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { target = { el: x, below: false }; break; }
+      target = { el: x, below: true };
+    }
+    if (target) target.el.classList.add(target.below ? 'drop-below' : 'drop-above');
+    drag.target = target;
+    return;
+  }
+  if (!drag.active) {
+    const moved = Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0);
+    if (e.pointerType === 'mouse' && moved > 6) startPlanDrag(e.clientX, e.clientY);
+    else if (e.pointerType !== 'mouse' && moved > 10) { clearTimeout(drag.timer); drag = null; }
+    return;
+  }
+  movePlanDrag(e.clientX, e.clientY);
 });
-main.addEventListener('dragover', (e) => {
-  const item = e.target.closest('.item'); if (!item || dragFrom == null) return;
-  e.preventDefault();
-  const r = item.getBoundingClientRect(); const below = e.clientY > r.top + r.height / 2;
-  document.querySelectorAll('.drop-above,.drop-below').forEach((x) => x.classList.remove('drop-above', 'drop-below'));
-  item.classList.add(below ? 'drop-below' : 'drop-above');
-});
-main.addEventListener('drop', (e) => {
-  const item = e.target.closest('.item'); if (!item || dragFrom == null) return;
-  e.preventDefault();
-  const items = cur().items;
-  let to = Number(item.dataset.i) + (item.classList.contains('drop-below') ? 1 : 0);
-  const [moved] = items.splice(dragFrom, 1);
-  if (to > dragFrom) to -= 1;
-  items.splice(to, 0, moved);
-  dragFrom = null; persist(); renderPanel();
-});
-main.addEventListener('dragend', () => {
-  dragFrom = null;
-  document.querySelectorAll('.item').forEach((x) => { x.draggable = false; x.classList.remove('dragging', 'drop-above', 'drop-below'); });
-});
+
+function endDrag() {
+  if (!drag) return;
+  const d = drag; drag = null;
+  clearTimeout(d.timer);
+  if (d.kind === 'item') {
+    d.el.style.transform = '';
+    main.querySelectorAll('.item').forEach((x) => x.classList.remove('dragging', 'drop-above', 'drop-below'));
+    if (!d.target) return;
+    const items = cur().items;
+    let to = Number(d.target.el.dataset.i) + (d.target.below ? 1 : 0);
+    if (to > d.from) to -= 1;
+    if (to === d.from) return;
+    const [moved] = items.splice(d.from, 1);
+    items.splice(to, 0, moved);
+    persist(); renderPanel();
+    return;
+  }
+  if (!d.active) return;
+  suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+  d.ghost?.remove();
+  document.body.classList.remove('is-dragging');
+  document.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop'));
+  const p = state.plans.find((x) => x.id === d.id);
+  if (p && d.over && d.over !== p.date) {
+    p.date = d.over; state.cal.sel = d.over;
+    persist(); render(); toast(`Moved to ${fmtLongDate(d.over)}`);
+  }
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
+// ---------- type it in ----------
+const sheet = document.createElement('div');
+sheet.className = 'sheet'; sheet.hidden = true;
+document.body.appendChild(sheet);
+const builder = { text: '', busy: false, error: '', showKey: false };
+
+function renderSheet() {
+  const editing = state.view === 'edit';
+  const hasKey = !!getKey();
+  sheet.innerHTML = `
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Type it in">
+      <div class="toolbar"><h3 class="display" style="margin:0;font-size:26px">Type it in</h3><span class="spacer"></span>
+        <button class="btn icon ghost" data-act="close-builder" aria-label="Close">×</button></div>
+      <textarea id="build-text" rows="6" placeholder="Saturday in Brooklyn. Walk the bridge around 4, Italian dinner at 6 (somewhere we need to book), cocktails after.">${esc(builder.text)}</textarea>
+      ${builder.error ? `<p class="build-err">${esc(builder.error)}</p>` : ''}
+      <div class="toolbar">
+        ${editing ? `<button class="btn primary" data-act="build" data-mode="update" ${builder.busy ? 'disabled' : ''}>${builder.busy ? 'Building…' : 'Update this date'}</button>
+          <button class="btn" data-act="build" data-mode="new" ${builder.busy ? 'disabled' : ''}>New date</button>`
+        : `<button class="btn primary" data-act="build" data-mode="new" ${builder.busy ? 'disabled' : ''}>${builder.busy ? 'Building…' : 'Build'}</button>`}
+        <span class="spacer"></span>
+        <button class="chip" data-act="toggle-key">${hasKey ? 'Claude ✓' : 'Claude key'}</button>
+      </div>
+      ${builder.showKey ? `<div class="key-row">
+        <input id="claude-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${hasKey ? '••••••••' : ''}" aria-label="Claude API key">
+        <button class="btn small" data-act="save-key">Save</button>
+        ${hasKey ? '<button class="btn small ghost" data-act="clear-key">Remove</button>' : ''}
+      </div>
+      <p class="muted" style="margin:0;font-size:12.5px">Saved only on this device. With a key, Claude builds the plan and looks up real places. Without one, a simple parser picks out times and places.</p>` : ''}
+    </div>`;
+}
+function openBuilder() { builder.error = ''; renderSheet(); sheet.hidden = false; setTimeout(() => $('#build-text')?.focus(), 50); }
+function closeBuilder() { sheet.hidden = true; }
+sheet.addEventListener('input', (e) => { if (e.target.id === 'build-text') builder.text = e.target.value; });
+sheet.addEventListener('click', (e) => { if (e.target === sheet) closeBuilder(); });
+
+async function runBuild(mode) {
+  const text = builder.text.trim();
+  if (!text || builder.busy) return;
+  const current = mode === 'update' ? cur() : null;
+  builder.busy = true; builder.error = ''; renderSheet();
+  let result;
+  try {
+    result = getKey() ? await buildWithClaude(text, { current }) : buildLocally(text, current);
+  } catch (err) {
+    builder.busy = false;
+    builder.error = { 'no-key': 'Add a Claude key first.', refused: 'Claude declined that one. Try rewording.', 'too-long': 'That was too long to build. Try a shorter description.' }[err.message]
+      || (err.status === 401 ? 'That Claude key was rejected.' : `Couldn't build it: ${err.message || err}`);
+    renderSheet(); return;
+  }
+  const { plan, city } = result;
+  if (city) {
+    const g = (await geocode(city).catch(() => []))[0];
+    if (g) plan.location = { name: g.name, lat: g.lat, lon: g.lon };
+  }
+  if (mode === 'update') state.plans[state.plans.findIndex((p) => p.id === current.id)] = plan;
+  else { plan.id = uid(); state.plans.push(plan); }
+  state.curId = plan.id; state.view = 'edit'; state.tab = 'timeline'; state.open.clear();
+  builder.busy = false; builder.text = '';
+  closeBuilder(); persist(); render(); window.scrollTo(0, 0);
+  toast(mode === 'update' ? 'Updated' : 'Built');
+}
 
 function toast(msg, action = '') {
   const t = $('#toast');

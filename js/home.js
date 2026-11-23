@@ -1,9 +1,9 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
-  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl,
-} from './store.js?v=5';
-import { themeById, EMBLEMS, mountFx } from './themes.js?v=5';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=5';
+  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label,
+} from './store.js?v=6';
+import { themeById, EMBLEMS, mountFx } from './themes.js?v=6';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -31,10 +31,17 @@ function render() {
   document.querySelector('meta[name="theme-color"]').content = theme.swatch[0];
   document.title = plan.title || 'Date Night';
   renderHero(theme);
+  renderNav();
   renderTimeline();
   renderWeather();
   renderOutfit();
   renderPicksBar();
+}
+
+const L = (k) => esc(label(plan, k));
+function renderNav() {
+  document.querySelectorAll('.jump a').forEach((a) => { a.textContent = label(plan, { plan: 'plan', weather: 'weather', outfits: 'wear' }[a.dataset.sec]); });
+  $('#send-picks').textContent = label(plan, 'send');
 }
 
 // ---------- hero ----------
@@ -91,12 +98,12 @@ function linksFor(o) {
 function reservationHTML(it) {
   const r = it.reservation;
   if (!r?.needed) return '';
-  if (r.status === 'booked') return `<div class="tl-meta"><span class="badge ok">Reserved${r.details ? ` · ${esc(r.details)}` : ''}</span></div>`;
+  if (r.status === 'booked') return `<div class="tl-meta"><span class="badge ok">${L('reserved')}${r.details ? ` · ${esc(r.details)}` : ''}</span></div>`;
   const v = picks.resv[it.id];
-  return `<div class="resv-ask" role="group" aria-label="Reserve">
-    <span>Reserve?</span>
-    <button class="chip" type="button" data-resv="${it.id}" data-v="yes" aria-pressed="${v === 'yes'}">Yes</button>
-    <button class="chip" type="button" data-resv="${it.id}" data-v="no" aria-pressed="${v === 'no'}">No</button>
+  return `<div class="resv-ask" role="group" aria-label="${L('reserve')}">
+    <span>${L('reserve')}</span>
+    <button class="chip" type="button" data-resv="${it.id}" data-v="yes" aria-pressed="${v === 'yes'}">${L('yes')}</button>
+    <button class="chip" type="button" data-resv="${it.id}" data-v="no" aria-pressed="${v === 'no'}">${L('no')}</button>
   </div>`;
 }
 
@@ -177,7 +184,7 @@ async function loadWeather() {
 
 function renderWeather() {
   const el = $('#weather');
-  const head = `<div class="eyebrow">Weather${plan.location?.name ? ` · ${esc(plan.location.name.split(',')[0])}` : ''}</div>`;
+  const head = `<div class="eyebrow">${L('weather')}${plan.location?.name ? ` · ${esc(plan.location.name.split(',')[0])}` : ''}</div>`;
   if (!forecast) { el.innerHTML = `${head}<p class="wx-empty">…</p>`; return; }
   const msg = {
     'too-far': `Forecast in ${forecast.daysUntil} day${forecast.daysUntil === 1 ? '' : 's'}.`,
@@ -216,15 +223,15 @@ function renderWeather() {
 function renderOutfit() {
   const o = plan.outfit || {};
   $('#outfits').innerHTML = `
-    <div class="eyebrow">Wear</div>
+    <div class="eyebrow">${L('wear')}</div>
     ${o.dressCode ? `<p class="dress">${esc(o.dressCode)}</p>` : ''}
-    ${o.palette?.length ? `<h4>Colors</h4><div class="palette">${o.palette.map((c) => `<i style="background:${esc(c)}" title="${esc(c)}"></i>`).join('')}</div>` : ''}
-    ${o.me ? `<h4>I'm wearing</h4><p>${esc(o.me)}</p>` : ''}
-    ${o.suggestions?.filter(Boolean).length ? `<h4>Ideas</h4><div class="suggest">${o.suggestions.map((s, i) => (s
+    ${o.palette?.length ? `<h4>${L('colors')}</h4><div class="palette">${o.palette.map((c) => `<i style="background:${esc(c)}" title="${esc(c)}"></i>`).join('')}</div>` : ''}
+    ${o.me ? `<h4>${L('meWearing')}</h4><p>${esc(o.me)}</p>` : ''}
+    ${o.suggestions?.filter(Boolean).length ? `<h4>${L('ideas')}</h4><div class="suggest">${o.suggestions.map((s, i) => (s
       ? `<button class="chip" type="button" data-like="${i}" aria-pressed="${picks.liked.includes(i)}">${esc(s)}</button>` : '')).join('')}</div>` : ''}
     ${safeUrl(o.inspo) ? `<p style="margin-top:12px"><a class="chip soft" href="${esc(o.inspo)}" target="_blank" rel="noopener">Inspiration</a></p>` : ''}
-    <h4>You</h4>
-    <textarea id="her-outfit" placeholder="What you're wearing" aria-label="What you're wearing">${esc(picks.outfit)}</textarea>`;
+    <h4>${L('you')}</h4>
+    <textarea id="her-outfit" placeholder="${L('youPlaceholder')}" aria-label="${L('youPlaceholder')}">${esc(picks.outfit)}</textarea>`;
 }
 
 $('#outfits').addEventListener('click', (e) => {
