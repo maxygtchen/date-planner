@@ -1,9 +1,9 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl,
-} from './store.js?v=4';
-import { themeById, EMBLEMS } from './themes.js?v=4';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=4';
+} from './store.js?v=5';
+import { themeById, EMBLEMS, mountFx } from './themes.js?v=5';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -27,6 +27,7 @@ async function init() {
 function render() {
   const theme = themeById(plan.theme);
   document.body.dataset.theme = theme.id;
+  mountFx(document.getElementById('fx'), theme);
   document.querySelector('meta[name="theme-color"]').content = theme.swatch[0];
   document.title = plan.title || 'Date Night';
   renderHero(theme);

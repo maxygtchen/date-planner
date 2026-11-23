@@ -2,9 +2,9 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=4';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=4';
-import { geocode } from './weather.js?v=4';
+} from './store.js?v=5';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=5';
+import { geocode } from './weather.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -132,13 +132,13 @@ function renderCalendar() {
       return `<div class="wk-row ${cls}">
         <div class="wk-date"><small>${d.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${d.getDate()}</b></div>
         <div class="wk-plans">
-          ${ps.map((p) => `<button class="wk-plan" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
+          ${ps.map((p) => `<div class="wk-item"><button class="wk-plan" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
             <b>${esc(p.title || 'Untitled')}</b>
             <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x) => {
               const o = x.item.options.find((q) => q.id === x.item.chosen) || (x.item.options.length === 1 ? x.item.options[0] : null);
               return `<li><span>${fmtTime(x.start)}</span>${esc(o?.name || x.item.title)}</li>`;
             }).join('')}</ol>
-          </button>`).join('')}
+          </button>${trash(p)}</div>`).join('')}
           ${ps.length ? '' : `<button class="wk-add" data-act="new-on" data-date="${iso}">+</button>`}
         </div>
       </div>`;
@@ -161,11 +161,13 @@ function renderCalendar() {
 }
 
 const monthKey = (iso) => iso.slice(0, 7);
+const TRASH_SVG = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+const trash = (p) => `<button class="row-del" data-act="del-plan" data-id="${p.id}" aria-label="Delete ${esc(p.title || 'date')}">${TRASH_SVG}</button>`;
 const heart = (p) => `<button class="heart" data-act="fav" data-id="${p.id}" aria-pressed="${!!p.favorite}" aria-label="Favorite of the month">${p.favorite ? '♥' : '♡'}</button>`;
 const planRow = (p, withDate = false) => `<div class="plan-row-wrap">
     <button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
       <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(fmtLongDate(p.date))} · ` : ''}${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
-    </button>${heart(p)}</div>`;
+    </button>${heart(p)}${trash(p)}</div>`;
 
 function favHTML(c) {
   const key = toISODate(c).slice(0, 7);
@@ -527,13 +529,9 @@ document.addEventListener('click', async (e) => {
       p.id = uid(); p.title = `${plan.title} (copy)`;
       state.plans.push(p); state.curId = p.id; persist(); render(); toast('Duplicated'); break;
     }
-    case 'delete-plan':
-      if (!confirm(`Delete “${plan.title}”? This can't be undone.`)) break;
-      state.plans = state.plans.filter((p) => p.id !== plan.id);
-      if (!state.plans.length) state.plans.push(blankPlan());
-      state.curId = state.plans[0].id; state.view = 'calendar';
-      if (getFeaturedId() === plan.id) setFeaturedId(state.curId);
-      savePlans(state.plans); render(); break;
+    case 'delete-plan': deletePlan(plan.id); break;
+    case 'del-plan': deletePlan(b.dataset.id); break;
+    case 'undo-delete': undoDelete(); break;
     case 'feature': setFeaturedId(plan.id); render(); toast('On home page'); break;
     case 'tab': state.tab = b.dataset.tab; renderPanel(); break;
     case 'theme': plan.theme = b.dataset.id; document.body.dataset.theme = plan.theme; structural(); break;
@@ -658,9 +656,38 @@ main.addEventListener('dragend', () => {
   document.querySelectorAll('.item').forEach((x) => { x.draggable = false; x.classList.remove('dragging', 'drop-above', 'drop-below'); });
 });
 
-function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200);
+function toast(msg, action = '') {
+  const t = $('#toast');
+  t.innerHTML = `${esc(msg)}${action}`;
+  t.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2200);
+}
+
+// Delete right away, with a few seconds to undo.
+let lastDeleted = null;
+function deletePlan(id) {
+  const index = state.plans.findIndex((p) => p.id === id);
+  if (index === -1) return;
+  const [plan] = state.plans.splice(index, 1);
+  lastDeleted = { plan, index, featured: getFeaturedId() === id, wasCurrent: state.curId === id };
+  if (!state.plans.length) state.plans.push(blankPlan());
+  if (lastDeleted.wasCurrent) { state.curId = state.plans[0].id; state.view = 'calendar'; }
+  if (lastDeleted.featured) {
+    const next = state.plans.filter((p) => !isPast(p)).sort((a, b) => a.date.localeCompare(b.date))[0] || state.plans[0];
+    setFeaturedId(next.id);
+  }
+  clearTimeout(saveTimer); saveTimer = null; savePlans(state.plans); render();
+  toast('Deleted', '<button class="toast-btn" data-act="undo-delete">Undo</button>');
+}
+function undoDelete() {
+  if (!lastDeleted) return;
+  const { plan, index, featured, wasCurrent } = lastDeleted;
+  state.plans.splice(Math.min(index, state.plans.length), 0, plan);
+  if (featured) setFeaturedId(plan.id);
+  if (wasCurrent) { state.curId = plan.id; state.view = 'edit'; }
+  lastDeleted = null;
+  savePlans(state.plans); render();
+  $('#toast').classList.remove('show');
 }
 
 render();
