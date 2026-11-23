@@ -1,8 +1,8 @@
 // Turn a typed description into a plan.
 // With a Claude API key (saved only on this device) Claude builds it, looking up real places.
 // Without one, a simple local parser picks out times, places and stop types.
-import { blankPlan, newItem, newOption, normalizePlan, toISODate, dateFromISO, uid } from './store.js?v=6';
-import { THEMES } from './themes.js?v=6';
+import { blankPlan, newItem, newOption, normalizePlan, toISODate, dateFromISO, uid } from './store.js?v=7';
+import { THEMES } from './themes.js?v=7';
 
 const KEY_STORE = 'dp.claudeKey.v1';
 export const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; } };
@@ -167,37 +167,109 @@ function parseDate(text) {
 }
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
-export function buildLocally(text, current) {
+const THEME_WORDS = [
+  ['warmxmas', /\b(warm|cozy)\s+christmas|christmas|xmas|holiday/i],
+  ['whitexmas', /\bwhite\s+christmas|snow(y)?\b|winter/i],
+  ['festive', /\bnew\s*year|nye|festive|party|celebrat|birthday|anniversary/i],
+  ['valentine', /valentine/i],
+  ['spooky', /halloween|spooky/i],
+  ['autumn', /thanksgiving|autumn|\bfall\b|cozy/i],
+  ['summer', /summer|sunny/i],
+  ['coastal', /beach|coast|ocean|seaside/i],
+  ['blossom', /spring|blossom|garden/i],
+  ['starlit', /star|rooftop|night sky/i],
+  ['midnight', /jazz|speakeasy|midnight/i],
+  ['golden', /golden|sunset/i],
+];
+const matchTheme = (s) => {
+  const exact = THEMES.find((t) => s.toLowerCase().includes(t.name.toLowerCase()));
+  if (exact) return exact.id;
+  // Check the specific holiday wording before the general one ("white christmas" before "christmas").
+  if (/\bwhite\s+christmas/i.test(s)) return 'whitexmas';
+  return (THEME_WORDS.find(([, re]) => re.test(s)) || [])[0] || null;
+};
+const COLORS = {
+  black: '#1f1b18', white: '#f7f5f0', cream: '#efe4d0', ivory: '#f3ecdc', beige: '#d9c7a8', camel: '#c19a6b', tan: '#c8a27a',
+  brown: '#6b4428', red: '#b3261e', burgundy: '#6e1f2e', maroon: '#6e1f2e', wine: '#6e1f2e', pink: '#efb3c1', blush: '#f2c9cf',
+  orange: '#e0782c', rust: '#a84b24', gold: '#d4b05a', yellow: '#f2cf55', green: '#4f7a4a', olive: '#7d8a4e', sage: '#9cae8f',
+  emerald: '#1f6b4f', navy: '#1f2c4a', blue: '#3b6a9a', 'light blue': '#a9c6e3', denim: '#4a6a8f', purple: '#6c4a8c', lavender: '#c3b4e3',
+  grey: '#8a8a8a', gray: '#8a8a8a', silver: '#c9ccd1',
+};
+const tidy = (s) => s.replace(/^[\s:,-]+|[\s.!:,-]+$/g, '').trim();
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const splitList = (s) => s.split(/,|\band\b|\/|;|\+/i).map((x) => cap(tidy(x))).filter(Boolean);
+
+// One-line instructions that set something other than a stop.
+function applyDirective(plan, sentence) {
+  const s = sentence.trim();
+  let m;
+  if ((m = s.match(/^(?:title|name|call it|called)\b\s*(?:it\s+)?[:\-]?\s*["“]?(.+?)["”]?$/i))) { plan.title = tidy(m[1]); return true; }
+  if ((m = s.match(/^dress\s*code\s*(?:is)?\s*[:\-]?\s*(.+)$/i))) { plan.outfit.dressCode = cap(tidy(m[1])); return true; }
+  if ((m = s.match(/^(?:i(?:'m| am)\s+wearing|i(?:'ll| will)\s+wear|i\s+wear|my outfit|me)\s*(?:is)?\s*[:\-]?\s*(.+)$/i))) { plan.outfit.me = cap(tidy(m[1])); return true; }
+  if ((m = s.match(/^(?:she\s+(?:could|can|should|might)\s+wear|(?:outfit\s+)?ideas?(?:\s+for her)?|for her|her outfit|outfit)\s*[:\-]?\s*(.+)$/i))) { plan.outfit.suggestions = splitList(m[1]); return true; }
+  if ((m = s.match(/^colou?rs?\s*(?:are)?\s*[:\-]?\s*(.+)$/i))) {
+    const names = splitList(m[1]).map((x) => x.toLowerCase());
+    plan.outfit.palette = names.map((n) => COLORS[n] || (/^#[0-9a-f]{3,6}$/i.test(n) ? n : null)).filter(Boolean);
+    return true;
+  }
+  if (/\btheme(d)?\b/i.test(s) || /^make it\b/i.test(s)) { const t = matchTheme(s); if (t) { plan.theme = t; return true; } }
+  if ((m = s.match(/^(?:start(?:ing)?|begin(?:ning)?)\s+(?:at\s+)?(.+)$/i)) && parseTime(m[1]) != null) {
+    const t = parseTime(m[1]); plan.startTime = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; return true;
+  }
+  return false;
+}
+
+export function buildLocally(text, current, { replace = false } = {}) {
   const plan = current ? JSON.parse(JSON.stringify(current)) : blankPlan();
+  plan.outfit = { dressCode: '', palette: [], me: '', suggestions: [], inspo: '', ...(plan.outfit || {}) };
+  if (replace) plan.items = [];
   const date = parseDate(text); if (date) plan.date = date;
   // The area: "in Brooklyn" / "around SoHo".
-  const area = text.match(/\b(?:in|around)\s+([A-Z][\w'-]*(?:[ \t]+[A-Z][\w'-]*)*)/);
-  const parts = text.split(/\n|;|,|\.\s|\bthen\b|\bafter that\b|\bafterwards\b|\band then\b|→|->/i).map((s) => s.trim()).filter(Boolean);
+  const area = text.match(/\b(?:in|around)\s+(?:the\s+)?([A-Z][\w'-]*(?:[ \t]+[A-Z][\w'-]*)*)/);
+
+  // Sentences first: some set the title, theme or outfit instead of adding a stop.
+  const sentences = text.split(/\n+|(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  const stopText = sentences.filter((x) => !applyDirective(plan, x)).join('\n');
+
+  const parts = stopText.split(/\n|;|,(?![^()]*\))|\.\s|\bthen\b|\bafter that\b|\bafterwards\b|\band then\b|\bfollowed by\b|→|->/i).map((x) => x.trim()).filter(Boolean);
   let first = null;
   const items = [];
   parts.forEach((part) => {
     if (!/[a-z]/i.test(part)) return;
     const time = parseTime(part);
     if (time != null && first == null) first = time;
-    let clean = part.replace(/\([^)]*\)/g, '').replace(/\b(?:in|around)\s+[A-Z][\w'-]*(?:[ \t]+[A-Z][\w'-]*)*/g, '').replace(/\b(at|around|@)?\s*\d{1,2}(:\d{2})?\s*(am|pm)\b/ig, '').replace(/\bfor\s+\d+(\.\d+)?\s*(h|hr|hrs|hours?|m|min|mins|minutes?)\b/ig, '').trim();
+    // "book it" on its own belongs to the stop before it.
+    if (/^(?:and\s+)?(?:we\s+)?(?:need to\s+)?(?:book|reserve)\b[\w\s]*$|^reservations?(?:\s+needed)?$|^tickets?$/i.test(part.replace(/[().!]/g, '').trim())) {
+      if (items.length) items[items.length - 1].reservation.needed = true;
+      return;
+    }
+    let clean = part.replace(/\([^)]*\)/g, '').replace(/\b(?:in|around)\s+(?:the\s+)?[A-Z][\w'-]*(?:[ \t]+[A-Z][\w'-]*)*/g, '')
+      .replace(/\b(at|around|@|by)?\s*\d{1,2}(:\d{2})?\s*(am|pm)\b/ig, '').replace(/\b(at|around)\s+\d{1,2}(:\d{2})\b/ig, '')
+      .replace(/\b(?:for\s+)?(?:about\s+|around\s+)?\d+(\.\d+)?\s*(h|hr|hrs|hours?|m|min|mins|minutes?)\b/ig, '')
+      .replace(/\b(?:need(?:s)? to |we'll |gotta |must )?(?:book|reserve)(?: it| a table| ahead)?\b|\breservations?(?: needed)?\b|\btickets?\b/ig, '').trim();
     const dateWords = new RegExp(`\\b(?:on\\s+)?(?:(?:${MONTHS.join('|')})[a-z]*\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|${WEEKDAYS.join('|')}|tonight|tomorrow|today)\\b`, 'ig');
-    clean = clean.replace(dateWords, '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim();
-    const bare = clean.toLowerCase().replace(/^on\s+/, '').trim();
-    if (!bare || WEEKDAYS.includes(bare) || ['tonight', 'tomorrow', 'today'].includes(bare) || MONTHS.some((m) => bare.startsWith(m) && /\d/.test(bare) && bare.split(' ').length <= 2)) return;
+    clean = tidy(clean.replace(dateWords, ''));
+    const bare = clean.toLowerCase().replace(/^(on|we|let's|lets|i want|i want to|we'll|we will)\s+/, '').trim();
+    if (!bare || ['tonight', 'tomorrow', 'today', 'date night', 'date'].includes(bare)) return;
     const type = (TYPE_WORDS.find(([, re]) => re.test(clean)) || ['activity'])[0];
     const it = newItem(type);
     const dur = parseDuration(part); if (dur) it.duration = dur;
-    const at = clean.match(/\b(?:at|@)\s+(.+)$/i);
-    const place = at ? at[1].replace(/[.!]+$/, '').trim() : '';
-    const head = (at ? clean.slice(0, at.index) : clean).replace(/^(and|then|first|after|finally)\s+/i, '').trim();
-    it.title = head ? titleCase(head) : it.title;
-    if (place) it.options = [{ ...newOption(), name: titleCase(place) }];
-    if (/\b(reserv|book|tickets?)\b/i.test(part)) it.reservation.needed = true;
+    // "dinner at A or B" / "dinner: A or B" → choices she can pick from.
+    const at = clean.match(/\b(?:at|@)\s+(.+)$/i) || clean.match(/^([^:]+):\s*(.+)$/);
+    const placeText = at ? (at.length > 2 && at[2] !== undefined && clean.includes(':') && !/\b(?:at|@)\s/i.test(clean) ? at[2] : at[1]) : '';
+    const headText = at ? (clean.includes(':') && !/\b(?:at|@)\s/i.test(clean) ? at[1] : clean.slice(0, at.index)) : clean;
+    const places = placeText ? placeText.split(/\s+or\s+|\s*\/\s*/i).map(tidy).filter(Boolean) : [];
+    const head = tidy(headText.replace(/^(and|then|first|after|finally|next|we|let's|lets|go|go to|grab|get|have)\s+/i, '').replace(/^(a|an|the)\s+/i, (x) => x));
+    it.title = head ? cap(head) : it.title;
+    if (!head && places.length === 1) it.title = places[0];
+    it.options = places.map((name) => ({ ...newOption(), name: titleCase(name) }));
+    if (/\b(reserv|book|tickets?)/i.test(part)) it.reservation.needed = true;
     items.push(it);
   });
-  if (first != null) plan.startTime = `${String(Math.floor(first / 60)).padStart(2, '0')}:${String(first % 60).padStart(2, '0')}`;
-  if (items.length) plan.items = current ? [...plan.items, ...items] : items;
+  if (first != null && !/^(?:start|begin)/im.test(text)) plan.startTime = `${String(Math.floor(first / 60)).padStart(2, '0')}:${String(first % 60).padStart(2, '0')}`;
+  if (items.length) plan.items = [...plan.items, ...items];
   if (!current && plan.title === 'Untitled date night') plan.title = 'Date Night';
+  if (!plan.theme || (!current && !/\btheme/i.test(text))) { const t = matchTheme(text); if (t && !current) plan.theme = t; }
   plan.id = plan.id || uid();
   return { plan: normalizePlan(plan), city: area ? area[1] : null };
 }

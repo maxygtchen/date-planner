@@ -1,9 +1,9 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label,
-} from './store.js?v=6';
-import { themeById, EMBLEMS, mountFx } from './themes.js?v=6';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=6';
+} from './store.js?v=7';
+import { themeById, EMBLEMS, mountFx } from './themes.js?v=7';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=7';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;

@@ -682,3 +682,8 @@ select {
   .p-top .saved { display: none; }
   .p-top .btn.small { padding: 0 12px; }
 }
+
+/* describe box on the timeline */
+.describe { display: grid; gap: 10px; }
+.describe textarea { width: 100%; min-height: 120px; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--bg); font-size: 16px; line-height: 1.5; resize: vertical; }
+.describe textarea::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }

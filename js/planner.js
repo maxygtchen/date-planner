@@ -2,10 +2,10 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=6';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=6';
-import { geocode } from './weather.js?v=6';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=6';
+} from './store.js?v=7';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=7';
+import { geocode, placeFor } from './weather.js?v=7';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=7';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -268,11 +268,25 @@ function matchesFilter(it) {
   }
 }
 
+const DESCRIBE_EXAMPLE = `Saturday in the West Village. Christmas theme.
+Ice skating at Bryant Park at 3pm for 1.5 hours
+Dinner at Via Carota or I Sodi, book it
+Drinks at Employees Only
+I'm wearing black coat, blue jeans
+She could wear red dress, boots`;
+
 function timelineTab(plan) {
   const sched = schedule(plan);
   const total = sched.length ? sched[sched.length - 1].end - sched[0].start : 0;
   const rows = sched.map((s, i) => ({ ...s, i })).filter((s) => matchesFilter(s.item));
   return `
+  <section class="p-card describe">
+    <textarea id="tl-text" rows="4" aria-label="Describe the date" placeholder="${esc(DESCRIBE_EXAMPLE)}">${esc(state.tlText || '')}</textarea>
+    <div class="toolbar">
+      <button class="btn primary" data-act="tl-build" data-mode="add">${plan.items.length ? 'Add to timeline' : 'Build timeline'}</button>
+      ${plan.items.length ? '<button class="btn" data-act="tl-build" data-mode="replace">Replace timeline</button>' : ''}
+    </div>
+  </section>
   <section class="p-card">
     <div class="toolbar" style="margin-bottom:12px">
       <div>
@@ -464,6 +478,7 @@ function shareTab(plan) {
 main.addEventListener('input', (e) => {
   const el = e.target;
   if (el.id === 'geo-q') return geoSearch(el.value);
+  if (el.id === 'tl-text') { state.tlText = el.value; return; }
   const bind = el.dataset.bind; if (!bind) return;
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if ('num' in el.dataset) v = Math.max(5, Math.round(Number(v) || 0));
@@ -522,10 +537,12 @@ document.addEventListener('click', async (e) => {
     case 'new-plan':
     case 'new-on': {
       const p = blankPlan(); if (b.dataset.date) p.date = b.dataset.date;
-      state.plans.push(p); state.curId = p.id; state.view = 'edit'; state.tab = 'details'; persist(); render(); window.scrollTo(0, 0); break;
+      state.plans.push(p); state.curId = p.id; state.view = 'edit'; state.tab = 'timeline'; persist(); render(); window.scrollTo(0, 0); setTimeout(() => $('#tl-text')?.focus(), 50); break;
     }
     case 'view-cal': state.view = 'calendar'; render(); break;
     case 'open-builder': openBuilder(); break;
+    case 'tl-build': describeBuild(b.dataset.mode === 'replace'); break;
+    case 'undo-describe': if (lastDescribe) { const k = state.plans.findIndex((x) => x.id === lastDescribe.id); if (k > -1) state.plans[k] = lastDescribe; lastDescribe = null; persist(); render(); $('#toast').classList.remove('show'); } break;
     case 'close-builder': closeBuilder(); break;
     case 'build': runBuild(b.dataset.mode); break;
     case 'toggle-key': builder.showKey = !builder.showKey; renderSheet(); break;
@@ -748,6 +765,25 @@ function endDrag() {
 document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
 
+// ---------- describe box on the timeline ----------
+let lastDescribe = null;
+async function describeBuild(replace) {
+  const text = (state.tlText || '').trim();
+  if (!text) { $('#tl-text')?.focus(); return; }
+  const before = cur();
+  const { plan, city } = buildLocally(text, before, { replace });
+  if (city && city !== before.location?.name?.split(',')[0]) {
+    const g = await placeFor(city, before.location);
+    if (g) plan.location = { name: g.name, lat: g.lat, lon: g.lon };
+  }
+  lastDescribe = JSON.parse(JSON.stringify(before));
+  state.plans[state.plans.findIndex((p) => p.id === before.id)] = plan;
+  state.tlText = ''; state.filter = 'all';
+  persist(); render();
+  const added = plan.items.length - (replace ? 0 : before.items.length);
+  toast(added > 0 ? `Added ${added} stop${added === 1 ? '' : 's'}` : 'Updated', '<button class="toast-btn" data-act="undo-describe">Undo</button>');
+}
+
 // ---------- type it in ----------
 const sheet = document.createElement('div');
 sheet.className = 'sheet'; sheet.hidden = true;
@@ -799,7 +835,7 @@ async function runBuild(mode) {
   }
   const { plan, city } = result;
   if (city) {
-    const g = (await geocode(city).catch(() => []))[0];
+    const g = await placeFor(city, current?.location);
     if (g) plan.location = { name: g.name, lat: g.lat, lon: g.lon };
   }
   if (mode === 'update') state.plans[state.plans.findIndex((p) => p.id === current.id)] = plan;

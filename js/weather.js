@@ -59,8 +59,20 @@ export async function geocode(query) {
   const j = await res.json();
   return (j.results || []).map((r) => ({
     name: [r.name, r.admin1, r.country_code === 'US' ? null : r.country].filter(Boolean).join(', '),
-    lat: r.latitude, lon: r.longitude,
+    lat: r.latitude, lon: r.longitude, population: r.population || 0,
   }));
+}
+
+// Pick the best match for a typed area: near the date's current location if it has one,
+// otherwise the most populous match.
+export async function placeFor(query, near) {
+  const results = await geocode(query).catch(() => []);
+  if (!results.length) return null;
+  if (near?.lat != null) {
+    const km = (r) => Math.hypot((r.lat - near.lat) * 111, (r.lon - near.lon) * 111 * Math.cos((near.lat * Math.PI) / 180));
+    return results.filter((r) => km(r) < 150).sort((a, b) => km(a) - km(b))[0] || null;
+  }
+  return results.sort((a, b) => b.population - a.population)[0];
 }
 
 // A short, practical note based on the forecast.
