@@ -21,7 +21,6 @@ export function samplePlan() {
   return {
     id: uid(),
     title: 'Saturday Night',
-    invite: 'Keep Saturday free.',
     date: '2026-12-05',
     startTime: '16:00',
     location: { name: 'San Francisco, CA', lat: 37.7749, lon: -122.4194 },
@@ -29,7 +28,7 @@ export function samplePlan() {
     items: [
       {
         id: uid(), type: 'activity', title: 'Sunset walk at Lands End', duration: 75,
-        notes: 'Bring a layer.',
+        notes: '',
         options: [{ id: uid(), name: 'Lands End Trail', address: 'Lands End Trail, San Francisco', url: 'https://www.nps.gov/goga/planyourvisit/landsend.htm', price: '', tags: '', note: '', hidden: false }],
         chosen: null, reservation: { needed: false, status: 'none', url: '', details: '' },
       },
@@ -56,10 +55,10 @@ export function samplePlan() {
       },
     ],
     outfit: {
-      dressCode: 'Smart casual. Warm layers.',
+      dressCode: 'Smart casual',
       palette: ['#2d241d', '#c27a35', '#efe2cf', '#7d8a68'],
-      me: 'Camel coat, cream sweater, dark denim.',
-      suggestions: ['Long coat', 'Earth tones', 'Comfortable shoes'],
+      me: 'Black top, blue jeans',
+      suggestions: ['White top', 'Black top', 'Blue jeans', 'Black jeans', 'Coat'],
       inspo: '',
     },
     updatedAt: Date.now(),
@@ -70,7 +69,7 @@ export function blankPlan() {
   const d = new Date();
   d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); // next Saturday
   return {
-    id: uid(), title: 'Untitled date night', invite: '', date: toISODate(d), startTime: '18:00',
+    id: uid(), title: 'Untitled date night', favorite: false, date: toISODate(d), startTime: '18:00',
     location: { name: '', lat: null, lon: null }, theme: 'golden', items: [],
     outfit: { dressCode: '', palette: [], me: '', suggestions: [], inspo: '' },
     updatedAt: Date.now(),
@@ -85,6 +84,9 @@ export function newItem(type = 'activity') {
     reservation: { needed: false, status: 'none', url: '', details: '' },
   };
 }
+
+// Quick picks for outfit ideas.
+export const WARDROBE = ['White top', 'Black top', 'Blue jeans', 'Black jeans', 'Dress', 'Skirt', 'Sweater', 'Jacket', 'Coat', 'Sneakers', 'Boots', 'Heels'];
 
 export const newOption = () => ({ id: uid(), name: '', address: '', url: '', price: '', tags: '', note: '', hidden: false });
 

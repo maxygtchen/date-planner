@@ -526,3 +526,11 @@ code.block { display: block; white-space: pre-wrap; background: var(--bg-2); bor
 .wk-add:hover { color: var(--ink); }
 .side-group { margin: 18px 4px 8px; }
 .display, .wk-date b, .countdown b, .wx-now .temp { font-variant-numeric: lining-nums; }
+.plan-row-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
+.heart {
+  width: 48px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-solid);
+  font-size: 18px; cursor: pointer; color: var(--muted);
+}
+.heart[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.fav-month h3::before { content: "♥ "; color: var(--accent); font-size: .8em; }
+@media (max-width: 640px) { .cal-pill.fav { width: 7px; height: 7px; box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 3px var(--c); } }

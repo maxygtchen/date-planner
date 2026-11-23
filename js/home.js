@@ -51,7 +51,6 @@ function renderHero(theme) {
     <div class="emblem" aria-hidden="true">${EMBLEMS[theme.emblem]}</div>
     <h1 class="display">${titleHTML(plan.title)}</h1>
     <div class="when"><strong>${esc(fmtLongDate(plan.date))}</strong> · ${fmtTime(parseHM(plan.startTime))} – ${fmtTime(end)}${plan.location?.name ? `<br>${esc(plan.location.name)}` : ''}</div>
-    ${plan.invite ? `<p class="invite">${esc(plan.invite)}</p>` : ''}
     <div id="countdown"></div>`;
   renderCountdown();
 }

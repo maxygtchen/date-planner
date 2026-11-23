@@ -1,7 +1,7 @@
 import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
-  mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
+  WARDROBE, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
 } from './store.js';
 import { THEMES, themeById, EMBLEMS } from './themes.js';
 import { geocode } from './weather.js';
@@ -33,8 +33,13 @@ function persist() {
   cur().updatedAt = Date.now();
   $('#saved').textContent = 'Saving…';
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { savePlans(state.plans); $('#saved').textContent = 'Saved'; }, 300);
+  saveTimer = setTimeout(() => { saveTimer = null; savePlans(state.plans); $('#saved').textContent = 'Saved'; }, 300);
 }
+
+// Save right away if the page is hidden or closed mid-debounce.
+function flush() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePlans(state.plans); $('#saved').textContent = 'Saved'; } }
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
 function setPath(obj, path, value) {
   const keys = path.split('.');
@@ -109,9 +114,10 @@ function renderCalendar() {
         const cls = [d.getMonth() !== c.getMonth() && 'out', iso < TODAY() && 'past', iso === TODAY() && 'today', iso === state.cal.sel && 'sel'].filter(Boolean).join(' ');
         return `<button class="cal-day ${cls}" data-act="cal-sel" data-date="${iso}" aria-label="${esc(fmtLongDate(iso))}${ps.length ? `, ${ps.length} date${ps.length > 1 ? 's' : ''}` : ''}">
           <span class="n">${d.getDate()}</span>
-          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill" style="--c:${accent(p)}">${esc(p.title || 'Untitled')}</span>`).join('')}</span>
+          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Untitled')}</span>`).join('')}</span>
         </button>`;
       }).join('')}</div>
+      ${favHTML(c)}
       ${dayList(state.cal.sel)}`;
   } else {
     const start = addDays(cursor, -c.getDay());
@@ -154,13 +160,29 @@ function renderCalendar() {
     ${body}`;
 }
 
+const monthKey = (iso) => iso.slice(0, 7);
+const heart = (p) => `<button class="heart" data-act="fav" data-id="${p.id}" aria-pressed="${!!p.favorite}" aria-label="Favorite of the month">${p.favorite ? '♥' : '♡'}</button>`;
+const planRow = (p, withDate = false) => `<div class="plan-row-wrap">
+    <button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
+      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(fmtLongDate(p.date))} · ` : ''}${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
+    </button>${heart(p)}</div>`;
+
+function favHTML(c) {
+  const key = toISODate(c).slice(0, 7);
+  const inMonth = state.plans.filter((p) => monthKey(p.date) === key).sort((a, b) => a.date.localeCompare(b.date));
+  if (!inMonth.length) return '';
+  const fav = inMonth.find((p) => p.favorite);
+  return `<div class="day-list fav-month">
+    <h3>Favorite of ${MONTHS[c.getMonth()]}</h3>
+    ${fav ? planRow(fav, true) : inMonth.map((p) => planRow(p, true)).join('')}
+  </div>`;
+}
+
 function dayList(iso) {
   const ps = plansOn(iso);
   return `<div class="day-list">
     <h3>${esc(fmtLongDate(iso))}</h3>
-    ${ps.map((p) => `<button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
-      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
-    </button>`).join('')}
+    ${ps.map((p) => planRow(p)).join('')}
     <div><button class="btn small" data-act="new-on" data-date="${iso}">+ New date</button></div>
   </div>`;
 }
@@ -207,7 +229,6 @@ function detailsTab(plan) {
         <input id="geo-q" value="${esc(plan.location?.name || '')}" placeholder="City" autocomplete="off"></label>
     </div>
     <div class="geo-results" id="geo-results">${state.geo.map((g, i) => `<button data-act="geo-pick" data-i="${i}">${esc(g.name)}</button>`).join('')}</div>
-    <div style="margin-top:12px">${area('Note', 'invite', plan.invite, 'rows="2"')}</div>
   </section>
   <section class="p-card">
     <h3>Theme</h3>
@@ -390,11 +411,11 @@ function outfitsTab(plan) {
   </section>
   <section class="p-card">
     <h3>Ideas</h3>
-    <div class="list-edit">
-      ${o.suggestions.map((s, i) => `<div class="row"><input data-bind="outfit.suggestions.${i}" value="${esc(s)}" aria-label="Suggestion ${i + 1}">
-        <button class="btn icon ghost" data-act="del-sugg" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}
-      <div><button class="btn small" data-act="add-sugg">+ Idea</button></div>
+    <div class="toolbar" role="group" aria-label="Ideas">
+      ${[...WARDROBE, ...o.suggestions.filter((x) => x && !WARDROBE.includes(x))].map((w) =>
+        `<button class="chip" data-act="sugg" data-v="${esc(w)}" aria-pressed="${o.suggestions.includes(w)}">${esc(w)}</button>`).join('')}
     </div>
+    <div class="list-edit" style="margin-top:10px"><div class="row"><input id="sugg-new" placeholder="Add" aria-label="Add idea" enterkeyhint="done"></div></div>
     <div style="margin-top:12px">${field('Inspiration link', 'outfit.inspo', o.inspo, 'type="url" inputmode="url" placeholder="https://"')}</div>
   </section>`;
 }
@@ -484,11 +505,20 @@ document.addEventListener('click', async (e) => {
       state.plans.push(p); state.curId = p.id; state.view = 'edit'; state.tab = 'details'; persist(); render(); window.scrollTo(0, 0); break;
     }
     case 'view-cal': state.view = 'calendar'; render(); break;
+    case 'fav': {
+      const p = state.plans.find((x) => x.id === b.dataset.id);
+      const on = !p.favorite;
+      state.plans.forEach((x) => { if (monthKey(x.date) === monthKey(p.date)) x.favorite = false; });
+      p.favorite = on;
+      savePlans(state.plans); render(); break;
+    }
     case 'cal-mode': state.cal.mode = b.dataset.mode; state.cal.cursor = state.cal.sel || state.cal.cursor; render(); break;
     case 'cal-step': {
       const c = dateFromISO(state.cal.cursor);
       if (state.cal.mode === 'month') { c.setDate(1); c.setMonth(c.getMonth() + d); } else c.setDate(c.getDate() + 7 * d);
-      state.cal.cursor = toISODate(c); render(); break;
+      state.cal.cursor = toISODate(c);
+      if (state.cal.mode === 'month') state.cal.sel = monthKey(TODAY()) === monthKey(state.cal.cursor) ? TODAY() : state.cal.cursor;
+      render(); break;
     }
     case 'cal-today': state.cal.cursor = state.cal.sel = TODAY(); render(); break;
     case 'cal-sel': state.cal.sel = b.dataset.date; state.cal.cursor = b.dataset.date; render(); break;
@@ -549,9 +579,11 @@ document.addEventListener('click', async (e) => {
     case 'add-color': plan.outfit.palette.push('#c8b49a'); structural(); break;
     case 'del-color': plan.outfit.palette.splice(i, 1); structural(); break;
     case 'theme-colors': plan.outfit.palette = [...themeById(plan.theme).swatch]; structural(); break;
-    case 'add-sugg': plan.outfit.suggestions.push(''); structural();
-      [...document.querySelectorAll('[data-bind^="outfit.suggestions"]')].pop()?.focus(); break;
-    case 'del-sugg': plan.outfit.suggestions.splice(i, 1); structural(); break;
+    case 'sugg': {
+      const v = b.dataset.v, list = plan.outfit.suggestions;
+      plan.outfit.suggestions = list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
+      structural(); break;
+    }
     case 'make-link': {
       savePlans(state.plans);
       $('#share-url').value = await shareUrl(plan);
@@ -584,6 +616,11 @@ document.addEventListener('click', async (e) => {
 });
 
 main.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'sugg-new') {
+    const v = e.target.value.trim();
+    if (v && !cur().outfit.suggestions.includes(v)) { cur().outfit.suggestions.push(v); persist(); renderPanel(); $('#sugg-new')?.focus(); }
+    return;
+  }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.item-title')) { e.preventDefault(); e.target.click(); }
 });
 
