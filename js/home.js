@@ -1,10 +1,10 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
-  decodeCalendar, saveSharedCalendar, loadSharedCalendar,
-} from './store.js?v=9';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=9';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=9';
+  decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar,
+} from './store.js?v=10';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=10';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=10';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -13,6 +13,14 @@ let calPlans = null; // the dates she can browse in the calendar
 
 async function init() {
   setInterval(renderCountdown, 30000);
+  const bundle = location.hash.match(/d=([^&]+)/);
+  if (bundle) {
+    try {
+      const { plans, focus } = await decodeBundle(bundle[1]);
+      calPlans = plans; saveSharedCalendar(plans); plan = focus;
+    } catch { calPlans = loadSharedCalendar(); }
+    if (plan) { history.replaceState({ v: 'plan', id: plan.id }, ''); showPlan(plan); return; }
+  }
   const c = location.hash.match(/c=([^&]+)/);
   if (c) {
     try { calPlans = await decodeCalendar(c[1]); saveSharedCalendar(calPlans); } catch { calPlans = null; }
@@ -317,7 +325,7 @@ const stopsOf = (p) => p.items.filter((it) => it.type !== 'travel').map((it) => 
 });
 const row = (p, withDate) => `<button class="plan-row ${p.date < TODAY() ? 'past' : ''}" data-open="${p.id}" style="--c:${accent(p)}">
     <i></i><span><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
-    <small>${withDate ? `${esc(fmtLongDate(p.date))} · ` : ''}${fmtTime(parseHM(p.startTime))} – ${fmtTime(endOf(p))}</small>
+    <small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${fmtTime(parseHM(p.startTime))} – ${fmtTime(endOf(p))}</small>
     ${stopsOf(p).length ? `<small class="stops">${esc(stopsOf(p).join(' · '))}</small>` : ''}</span><span class="muted">›</span></button>`;
 
 function showCalendar() {
@@ -452,5 +460,5 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-addEventListener('hashchange', () => { if (/[pc]=/.test(location.hash)) location.reload(); });
+addEventListener('hashchange', () => { if (/[pcd]=/.test(location.hash)) location.reload(); });
 init();

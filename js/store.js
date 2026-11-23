@@ -236,10 +236,19 @@ async function decodeJSON(str) {
 export const encodePlan = (plan) => encodeJSON(slim(plan));
 export const decodePlan = async (str) => normalizePlan(await decodeJSON(str));
 
-export async function shareUrl(plan) {
+// A share link opens one date and carries every date for her calendar.
+export async function shareUrl(plan, allPlans = null) {
   const base = new URL('index.html', location.href);
-  base.hash = 'p=' + (await encodePlan(plan));
+  if (!allPlans) { base.hash = 'p=' + (await encodePlan(plan)); return base.toString(); }
+  const plans = allPlans.some((p) => p.id === plan.id) ? allPlans : [...allPlans, plan];
+  const sorted = plans.slice().sort((a, b) => a.date.localeCompare(b.date));
+  base.hash = 'd=' + (await encodeJSON({ v: 2, focus: plan.id, plans: sorted.map(slim) }));
   return base.toString();
+}
+export async function decodeBundle(str) {
+  const d = await decodeJSON(str);
+  const plans = (d.plans || []).map(normalizePlan);
+  return { plans, focus: plans.find((p) => p.id === d.focus) || plans[0] };
 }
 
 // ---------- calendar link (every date, for her) ----------

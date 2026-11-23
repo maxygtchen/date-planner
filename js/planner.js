@@ -1,11 +1,11 @@
 import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
-  WARDROBE, LABELS, LABEL_NAMES, calendarUrl, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=9';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=9';
-import { geocode, placeFor } from './weather.js?v=9';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=9';
+  WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
+} from './store.js?v=10';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=10';
+import { geocode, placeFor } from './weather.js?v=10';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=10';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -69,11 +69,11 @@ function renderSide() {
   const sorted = state.plans.slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
   const upcoming = sorted.filter((p) => !isPast(p));
   const past = sorted.filter(isPast).reverse();
-  const link = (p) => `
+  const link = (p) => `<div class="side-row">
       <button class="plan-link ${state.view === 'edit' && p.id === state.curId ? 'on' : ''}" data-act="select" data-id="${p.id}">
         <b>${p.id === featured ? '<span class="star" title="Home page">★</span> ' : ''}${esc(p.title || 'Untitled')}</b>
         <small>${esc(planMeta(p))}</small>
-      </button>`;
+      </button>${trash(p)}</div>`;
   $('#side').innerHTML = `
     <button class="plan-link ${state.view === 'calendar' ? 'on' : ''}" data-act="view-cal"><b>Calendar</b></button>
     <button class="plan-link" data-act="new-plan"><b>+ New date</b></button>
@@ -118,8 +118,9 @@ function renderCalendar() {
           <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" data-id="${p.id}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Untitled')}</span>`).join('')}</span>
         </button>`;
       }).join('')}</div>
+      ${dayList(state.cal.sel)}
       ${favHTML(c)}
-      ${dayList(state.cal.sel)}`;
+      ${allDatesHTML()}`;
   } else {
     const start = addDays(cursor, -c.getDay());
     const end = dateFromISO(addDays(start, 6));
@@ -167,8 +168,16 @@ const trash = (p) => `<button class="row-del" data-act="del-plan" data-id="${p.i
 const heart = (p) => `<button class="heart" data-act="fav" data-id="${p.id}" aria-pressed="${!!p.favorite}" aria-label="Favorite of the month">${p.favorite ? '♥' : '♡'}</button>`;
 const planRow = (p, withDate = false) => `<div class="plan-row-wrap">
     <button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
-      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(fmtLongDate(p.date))} · ` : ''}${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
+      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
     </button>${heart(p)}${trash(p)}</div>`;
+
+function allDatesHTML() {
+  const sorted = state.plans.slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  const upcoming = sorted.filter((p) => !isPast(p));
+  const past = sorted.filter(isPast).reverse();
+  return `${upcoming.length ? `<div class="day-list"><h3>Upcoming</h3>${upcoming.map((p) => planRow(p, true)).join('')}</div>` : ''}
+    ${past.length ? `<div class="day-list"><h3>Past</h3>${past.map((p) => planRow(p, true)).join('')}</div>` : ''}`;
+}
 
 function favHTML(c) {
   const key = toISODate(c).slice(0, 7);
@@ -450,20 +459,13 @@ function shareTab(plan) {
   return `
   <section class="p-card">
     <h3>Link</h3>
-    <p class="hint">Make a new link after edits.</p>
+    <p class="hint">Opens this date, with the calendar of all your dates. Make a new link after edits.</p>
     <div class="share-link"><input id="share-url" readonly aria-label="Share link">
       <button class="btn primary" data-act="make-link">Make link</button></div>
     <div class="toolbar" style="margin-top:10px">
       <button class="btn small" data-act="native-share">Share…</button>
       <button class="btn small ghost" data-act="open-link">Open</button>
     </div>
-  </section>
-  <section class="p-card">
-    <h3>Calendar link</h3>
-    <p class="hint">All your dates, past and upcoming, with favorites. Make a new one after changes.</p>
-    <div class="share-link"><input id="cal-url" readonly aria-label="Calendar link">
-      <button class="btn primary" data-act="make-cal-link">Make link</button></div>
-    <div class="toolbar" style="margin-top:10px"><button class="btn small" data-act="share-cal">Share…</button></div>
   </section>
   <section class="p-card">
     <h3>Home page</h3>
@@ -632,29 +634,17 @@ document.addEventListener('click', async (e) => {
     }
     case 'make-link': {
       savePlans(state.plans);
-      $('#share-url').value = await shareUrl(plan);
+      $('#share-url').value = await shareUrl(plan, state.plans);
       try { await navigator.clipboard.writeText($('#share-url').value); toast('Link copied'); } catch { $('#share-url').select(); }
       break;
     }
     case 'native-share': {
-      const url = await shareUrl(plan); $('#share-url').value = url;
+      const url = await shareUrl(plan, state.plans); $('#share-url').value = url;
       if (navigator.share) { try { await navigator.share({ title: plan.title, url }); } catch { /* cancelled */ } }
       else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
       break;
     }
-    case 'make-cal-link': {
-      savePlans(state.plans);
-      $('#cal-url').value = await calendarUrl(state.plans);
-      try { await navigator.clipboard.writeText($('#cal-url').value); toast('Link copied'); } catch { $('#cal-url').select(); }
-      break;
-    }
-    case 'share-cal': {
-      const url = await calendarUrl(state.plans); $('#cal-url').value = url;
-      if (navigator.share) { try { await navigator.share({ title: 'Our dates', url }); } catch { /* cancelled */ } }
-      else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
-      break;
-    }
-    case 'open-link': window.open(await shareUrl(plan), '_blank', 'noopener'); break;
+    case 'open-link': window.open(await shareUrl(plan, state.plans), '_blank', 'noopener'); break;
     case 'export': {
       const { updatedAt, ...rest } = plan;
       try { await navigator.clipboard.writeText(JSON.stringify(rest, null, 2)); toast('Copied'); } catch { toast('Could not copy'); }

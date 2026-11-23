@@ -1,8 +1,8 @@
 // Turn a typed description into a plan.
 // With a Claude API key (saved only on this device) Claude builds it, looking up real places.
 // Without one, a simple local parser picks out times, places and stop types.
-import { blankPlan, newItem, newOption, normalizePlan, toISODate, dateFromISO, uid } from './store.js?v=9';
-import { THEMES } from './themes.js?v=9';
+import { blankPlan, newItem, newOption, normalizePlan, toISODate, dateFromISO, uid } from './store.js?v=10';
+import { THEMES } from './themes.js?v=10';
 
 const KEY_STORE = 'dp.claudeKey.v1';
 export const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; } };
