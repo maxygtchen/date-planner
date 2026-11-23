@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Date Planner">
+  <meta name="theme-color" content="#fbf5ec">
+  <title>Date Planner</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%23c27a35'/><path d='M32 46s-14-8-14-18a7 7 0 0 1 14-2 7 7 0 0 1 14 2c0 10-14 18-14 18z' fill='%23fff'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="planner-body" data-theme="golden">
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="p-top">
+    <a class="brand" href="planner.html">Date <em>Planner</em></a>
+    <span class="saved" id="saved">Saved</span>
+    <button class="btn small" id="preview" data-act="open-link" type="button">Preview ↗</button>
+  </header>
+
+  <div class="p-shell">
+    <nav class="p-side" id="side" aria-label="Your date nights"></nav>
+    <div>
+      <div class="p-mobile-switch" id="mobile-switch"></div>
+      <main class="p-main" id="main"></main>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/planner.js"></script>
+</body>
+</html>
