@@ -1,11 +1,11 @@
 import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
-  WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=8';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=8';
-import { geocode, placeFor } from './weather.js?v=8';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=8';
+  WARDROBE, LABELS, LABEL_NAMES, calendarUrl, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
+} from './store.js?v=9';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=9';
+import { geocode, placeFor } from './weather.js?v=9';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -459,6 +459,13 @@ function shareTab(plan) {
     </div>
   </section>
   <section class="p-card">
+    <h3>Calendar link</h3>
+    <p class="hint">All your dates, past and upcoming, with favorites. Make a new one after changes.</p>
+    <div class="share-link"><input id="cal-url" readonly aria-label="Calendar link">
+      <button class="btn primary" data-act="make-cal-link">Make link</button></div>
+    <div class="toolbar" style="margin-top:10px"><button class="btn small" data-act="share-cal">Share…</button></div>
+  </section>
+  <section class="p-card">
     <h3>Home page</h3>
     ${featured ? '<p style="margin:0">★ Showing on home page</p>' : '<button class="btn" data-act="feature">★ Show on home page</button>'}
   </section>
@@ -632,6 +639,18 @@ document.addEventListener('click', async (e) => {
     case 'native-share': {
       const url = await shareUrl(plan); $('#share-url').value = url;
       if (navigator.share) { try { await navigator.share({ title: plan.title, url }); } catch { /* cancelled */ } }
+      else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
+      break;
+    }
+    case 'make-cal-link': {
+      savePlans(state.plans);
+      $('#cal-url').value = await calendarUrl(state.plans);
+      try { await navigator.clipboard.writeText($('#cal-url').value); toast('Link copied'); } catch { $('#cal-url').select(); }
+      break;
+    }
+    case 'share-cal': {
+      const url = await calendarUrl(state.plans); $('#cal-url').value = url;
+      if (navigator.share) { try { await navigator.share({ title: 'Our dates', url }); } catch { /* cancelled */ } }
       else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
       break;
     }

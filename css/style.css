@@ -687,3 +687,16 @@ select {
 .describe { display: grid; gap: 10px; }
 .describe textarea { width: 100%; min-height: 120px; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--bg); font-size: 16px; line-height: 1.5; resize: vertical; }
 .describe textarea::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+
+/* her calendar */
+.cal-btn {
+  position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px; z-index: 3;
+  width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--accent);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: var(--shadow);
+}
+.cal-btn[hidden] { display: none; }
+.her-cal { max-width: 820px; }
+.her-cal .day-list { margin-top: 22px; }
+.plan-row small { display: block; }
+.plan-row small.stops { color: var(--ink); opacity: .75; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

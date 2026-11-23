@@ -202,25 +202,61 @@ async function pipe(bytes, stream) {
   return new Uint8Array(await new Response(out).arrayBuffer());
 }
 
-export async function encodePlan(plan) {
-  const { updatedAt, ...rest } = plan;
-  const bytes = new TextEncoder().encode(JSON.stringify(rest));
+// Drop empty fields before packing; normalizePlan puts the defaults back.
+function slim(v) {
+  if (Array.isArray(v)) return v.map(slim);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === 'updatedAt') continue;
+      const y = slim(x);
+      if (y === '' || y === null || y === undefined || y === false) continue;
+      if (Array.isArray(y) && !y.length) continue;
+      if (y && typeof y === 'object' && !Array.isArray(y) && !Object.keys(y).length) continue;
+      out[k] = y;
+    }
+    return out;
+  }
+  return v;
+}
+
+async function encodeJSON(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
   if ('CompressionStream' in window) {
     try { return 'z' + toB64Url(await pipe(bytes, new CompressionStream('deflate-raw'))); } catch { /* fall back */ }
   }
   return 'j' + toB64Url(bytes);
 }
-
-export async function decodePlan(str) {
+async function decodeJSON(str) {
   const kind = str[0], body = fromB64Url(str.slice(1));
   const bytes = kind === 'z' ? await pipe(body, new DecompressionStream('deflate-raw')) : body;
-  return normalizePlan(JSON.parse(new TextDecoder().decode(bytes)));
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
+
+export const encodePlan = (plan) => encodeJSON(slim(plan));
+export const decodePlan = async (str) => normalizePlan(await decodeJSON(str));
 
 export async function shareUrl(plan) {
   const base = new URL('index.html', location.href);
   base.hash = 'p=' + (await encodePlan(plan));
   return base.toString();
+}
+
+// ---------- calendar link (every date, for her) ----------
+const SHARED_CAL_KEY = 'dp.sharedCal.v1';
+export async function calendarUrl(plans) {
+  const base = new URL('index.html', location.href);
+  const sorted = plans.slice().sort((a, b) => a.date.localeCompare(b.date));
+  base.hash = 'c=' + (await encodeJSON({ v: 1, plans: sorted.map(slim) }));
+  return base.toString();
+}
+export async function decodeCalendar(str) {
+  const d = await decodeJSON(str);
+  return (d.plans || []).map(normalizePlan);
+}
+export function saveSharedCalendar(plans) { safeSet(SHARED_CAL_KEY, JSON.stringify(plans)); }
+export function loadSharedCalendar() {
+  try { const v = JSON.parse(safeGet(SHARED_CAL_KEY)); return Array.isArray(v) ? v.map(normalizePlan) : null; } catch { return null; }
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

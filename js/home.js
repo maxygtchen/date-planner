@@ -1,27 +1,44 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
-  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label,
-} from './store.js?v=8';
-import { themeById, EMBLEMS, mountFx } from './themes.js?v=8';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=8';
+  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
+  decodeCalendar, saveSharedCalendar, loadSharedCalendar,
+} from './store.js?v=9';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=9';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
 
+let calPlans = null; // the dates she can browse in the calendar
+
 async function init() {
+  setInterval(renderCountdown, 30000);
+  const c = location.hash.match(/c=([^&]+)/);
+  if (c) {
+    try { calPlans = await decodeCalendar(c[1]); saveSharedCalendar(calPlans); } catch { calPlans = null; }
+    if (calPlans?.length) { history.replaceState({ v: 'cal' }, ''); showCalendar(); return; }
+  }
   const m = location.hash.match(/p=([^&]+)/);
   if (m) {
     try { plan = await decodePlan(m[1]); } catch { plan = null; }
+    calPlans = loadSharedCalendar();
+  } else {
+    calPlans = loadPlans(); // on my own device: all my dates
   }
-  if (!plan) {
-    const plans = loadPlans();
-    plan = plans.find((p) => p.id === getFeaturedId()) || plans[0];
-  }
+  if (!plan) plan = calPlans?.find((p) => p.id === getFeaturedId()) || loadPlans()[0];
+  history.replaceState({ v: 'plan', id: plan.id }, '');
+  showPlan(plan);
+}
+
+function showPlan(p) {
+  plan = p;
   picks = { options: {}, resv: {}, outfit: '', liked: [], ...loadPicks(plan.id) };
   picks.resv = picks.resv || {};
+  forecast = null; navTarget = null;
+  $('#her-cal').hidden = true; $('#app').hidden = false;
+  $('#cal-btn').hidden = !calPlans?.length;
   render();
   loadWeather();
-  setInterval(renderCountdown, 30000);
 }
 
 function render() {
@@ -99,6 +116,7 @@ function reservationHTML(it) {
   const r = it.reservation;
   if (!r?.needed) return '';
   if (r.status === 'booked') return `<div class="tl-meta"><span class="badge ok">${L('reserved')}${r.details ? ` · ${esc(r.details)}` : ''}</span></div>`;
+  if (plan.date < toISODate(new Date())) return ''; // nothing to book for a past date
   const v = picks.resv[it.id];
   return `<div class="resv-ask" role="group" aria-label="${L('reserve')}">
     <span>${L('reserve')}</span>
@@ -176,8 +194,12 @@ function choose(el) {
 
 // ---------- weather ----------
 async function loadWeather() {
-  try { forecast = await getForecast(plan.location || {}, plan.date); }
-  catch (err) { forecast = { status: err.message === 'no-location' ? 'no-location' : 'error' }; }
+  const forPlan = plan;
+  let f;
+  try { f = await getForecast(forPlan.location || {}, forPlan.date); }
+  catch (err) { f = { status: err.message === 'no-location' ? 'no-location' : 'error' }; }
+  if (plan !== forPlan) return; // she opened another date meanwhile
+  forecast = f;
   renderWeather();
   renderTimeline();
 }
@@ -279,6 +301,118 @@ $('#send-picks').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Could not copy'); }
 });
 
+// ---------- her calendar ----------
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const TODAY = () => toISODate(new Date());
+const addDays = (iso, n) => { const d = dateFromISO(iso); d.setDate(d.getDate() + n); return toISODate(d); };
+const hc = { mode: 'month', cursor: TODAY(), sel: TODAY() };
+const accent = (p) => themeById(p.theme).swatch[2];
+const plansOn = (iso) => calPlans.filter((p) => p.date === iso).sort((a, b) => a.startTime.localeCompare(b.startTime));
+const endOf = (p) => { const sc = schedule(p); return sc.length ? sc[sc.length - 1].end : parseHM(p.startTime); };
+const stopsOf = (p) => p.items.filter((it) => it.type !== 'travel').map((it) => {
+  const mine = loadPicks(p.id).options?.[it.id];
+  const o = it.options.find((x) => x.id === (mine || it.chosen)) || (it.options.length === 1 ? it.options[0] : null);
+  return o?.name || it.title;
+});
+const row = (p, withDate) => `<button class="plan-row ${p.date < TODAY() ? 'past' : ''}" data-open="${p.id}" style="--c:${accent(p)}">
+    <i></i><span><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
+    <small>${withDate ? `${esc(fmtLongDate(p.date))} · ` : ''}${fmtTime(parseHM(p.startTime))} – ${fmtTime(endOf(p))}</small>
+    ${stopsOf(p).length ? `<small class="stops">${esc(stopsOf(p).join(' · '))}</small>` : ''}</span><span class="muted">›</span></button>`;
+
+function showCalendar() {
+  $('#app').hidden = true; $('#picks-bar').hidden = true; $('#her-cal').hidden = false;
+  const upcoming = calPlans.filter((p) => p.date >= TODAY()).sort((a, b) => a.date.localeCompare(b.date));
+  const theme = themeById((upcoming[0] || calPlans[calPlans.length - 1] || {}).theme);
+  document.body.dataset.theme = theme.id;
+  document.querySelector('meta[name="theme-color"]').content = theme.swatch[0];
+  mountFx(document.getElementById('fx'), theme);
+  document.title = 'Our dates';
+  renderCalendar();
+  window.scrollTo(0, 0);
+}
+
+function renderCalendar() {
+  const c = dateFromISO(hc.cursor);
+  let title, eyebrow, body;
+  if (hc.mode === 'month') {
+    title = MONTHS[c.getMonth()]; eyebrow = String(c.getFullYear());
+    const first = new Date(c.getFullYear(), c.getMonth(), 1);
+    const gridStart = addDays(toISODate(first), -first.getDay());
+    const cells = Math.ceil((first.getDay() + new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate()) / 7) * 7;
+    const key = hc.cursor.slice(0, 7);
+    const fav = calPlans.find((p) => p.favorite && p.date.slice(0, 7) === key);
+    body = `<div class="cal-grid">${DOW.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
+      ${Array.from({ length: cells }, (_, i) => {
+        const iso = addDays(gridStart, i); const d = dateFromISO(iso); const ps = plansOn(iso);
+        const cls = [d.getMonth() !== c.getMonth() && 'out', iso < TODAY() && 'past', iso === TODAY() && 'today', iso === hc.sel && 'sel'].filter(Boolean).join(' ');
+        return `<button class="cal-day ${cls}" data-day="${iso}" aria-label="${esc(fmtLongDate(iso))}${ps.length ? `, ${ps.length} date${ps.length > 1 ? 's' : ''}` : ''}">
+          <span class="n">${d.getDate()}</span>
+          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</span>`).join('')}</span>
+        </button>`;
+      }).join('')}</div>
+      ${fav ? `<div class="day-list fav-month"><h3>Favorite of ${MONTHS[c.getMonth()]}</h3>${row(fav, true)}</div>` : ''}
+      ${plansOn(hc.sel).length ? `<div class="day-list"><h3>${esc(fmtLongDate(hc.sel))}</h3>${plansOn(hc.sel).map((p) => row(p)).join('')}</div>` : ''}`;
+  } else {
+    const start = addDays(hc.cursor, -c.getDay());
+    const s0 = dateFromISO(start); const end = dateFromISO(addDays(start, 6));
+    title = `${MONTHS[s0.getMonth()].slice(0, 3)} ${s0.getDate()} – ${s0.getMonth() === end.getMonth() ? '' : `${MONTHS[end.getMonth()].slice(0, 3)} `}${end.getDate()}`;
+    eyebrow = String(end.getFullYear());
+    body = `<div class="week">${Array.from({ length: 7 }, (_, i) => {
+      const iso = addDays(start, i); const d = dateFromISO(iso); const ps = plansOn(iso);
+      return `<div class="wk-row ${iso < TODAY() ? 'past' : ''} ${iso === TODAY() ? 'today' : ''}">
+        <div class="wk-date"><small>${d.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${d.getDate()}</b></div>
+        <div class="wk-plans">${ps.map((p) => `<button class="wk-plan" data-open="${p.id}" style="--c:${accent(p)}"><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
+          <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x, k) => `<li><span>${fmtTime(x.start)}</span>${esc(stopsOf(p)[k] || x.item.title)}</li>`).join('')}</ol></button>`).join('')}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  const past = calPlans.filter((p) => p.date < TODAY()).sort((a, b) => b.date.localeCompare(a.date));
+  const next = calPlans.filter((p) => p.date >= TODAY()).sort((a, b) => a.date.localeCompare(b.date));
+  $('#her-cal').innerHTML = `
+    <div class="cal-head" style="padding-top:calc(28px + env(safe-area-inset-top))">
+      <div><div class="eyebrow">${eyebrow}</div><h1 class="display">${title}</h1></div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="View">
+          <button data-mode="week" aria-pressed="${hc.mode === 'week'}">Week</button>
+          <button data-mode="month" aria-pressed="${hc.mode === 'month'}">Month</button>
+        </div>
+        <button class="btn icon" data-step="-1" aria-label="Previous">‹</button>
+        <button class="btn small" data-today>Today</button>
+        <button class="btn icon" data-step="1" aria-label="Next">›</button>
+      </div>
+    </div>
+    ${body}
+    ${next.length ? `<div class="day-list"><h3>Next</h3>${next.slice(0, 3).map((p) => row(p, true)).join('')}</div>` : ''}
+    ${past.length ? `<div class="day-list"><h3>Past dates</h3>${past.map((p) => row(p, true)).join('')}</div>` : ''}
+    <footer class="foot"><div class="ornament" aria-hidden="true">♡</div></footer>`;
+}
+
+$('#her-cal').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.open) {
+    const p = calPlans.find((x) => x.id === b.dataset.open);
+    if (p) { history.pushState({ v: 'plan', id: p.id }, ''); showPlan(p); window.scrollTo(0, 0); }
+    return;
+  }
+  if (b.dataset.mode) { hc.mode = b.dataset.mode; hc.cursor = hc.sel; }
+  else if (b.dataset.step) {
+    const c = dateFromISO(hc.cursor); const d = Number(b.dataset.step);
+    if (hc.mode === 'month') { c.setDate(1); c.setMonth(c.getMonth() + d); } else c.setDate(c.getDate() + 7 * d);
+    hc.cursor = toISODate(c);
+    if (hc.mode === 'month') hc.sel = hc.cursor.slice(0, 7) === TODAY().slice(0, 7) ? TODAY() : hc.cursor;
+  } else if ('today' in b.dataset) { hc.cursor = hc.sel = TODAY(); }
+  else if (b.dataset.day) { hc.sel = b.dataset.day; hc.cursor = b.dataset.day; }
+  else return;
+  renderCalendar();
+});
+$('#cal-btn').addEventListener('click', () => { history.pushState({ v: 'cal' }, ''); showCalendar(); });
+addEventListener('popstate', (e) => {
+  const st = e.state || {};
+  if (st.v === 'cal' && calPlans?.length) showCalendar();
+  else if (st.v === 'plan') { const p = calPlans?.find((x) => x.id === st.id) || plan; showPlan(p); }
+});
+
 // ---------- section bar ----------
 // The URL hash carries the plan, so these links scroll by hand instead of changing the hash.
 const SECTIONS = ['plan', 'weather', 'outfits'];
@@ -318,5 +452,5 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-addEventListener('hashchange', () => { if (/p=/.test(location.hash)) location.reload(); });
+addEventListener('hashchange', () => { if (/[pc]=/.test(location.hash)) location.reload(); });
 init();
