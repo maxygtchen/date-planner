@@ -1,10 +1,10 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
-  decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar,
-} from './store.js?v=12';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=12';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=12';
+  decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar, loadHerFavs, saveHerFavs,
+} from './store.js?v=14';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=14';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=14';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -69,6 +69,24 @@ function renderNav() {
   $('#send-picks').textContent = label(plan, 'send');
 }
 
+// ---------- favorites ----------
+// Hers override mine on her phone; a date can be a favorite once it has happened.
+let herFavs = loadHerFavs();
+const monthOf = (p) => p.date.slice(0, 7);
+const allDates = () => (calPlans?.length ? calPlans : [plan]);
+function favIdFor(month) {
+  if (month in herFavs) return herFavs[month];
+  return allDates().find((p) => p.favorite && monthOf(p) === month)?.id || '';
+}
+const isFav = (p) => !!p && favIdFor(monthOf(p)) === p.id;
+const canFav = (p) => p.date <= toISODate(new Date());
+function toggleFav(p) {
+  if (!canFav(p)) return;
+  herFavs = { ...herFavs, [monthOf(p)]: isFav(p) ? '' : p.id };
+  saveHerFavs(herFavs);
+}
+const HEART = (on) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>`;
+
 // ---------- hero ----------
 function titleHTML(t) {
   const words = esc(t || 'Date Night').split(' ');
@@ -84,6 +102,7 @@ function renderHero(theme) {
     <div class="emblem" aria-hidden="true">${EMBLEMS[theme.emblem]}</div>
     <h1 class="display">${titleHTML(plan.title)}</h1>
     <div class="when"><strong>${esc(fmtLongDate(plan.date))}</strong> · ${fmtTime(parseHM(plan.startTime))} – ${fmtTime(end)}${plan.location?.name ? `<br>${esc(plan.location.name)}` : ''}</div>
+    ${canFav(plan) ? `<button class="hero-fav" id="hero-fav" type="button" aria-pressed="${isFav(plan)}" aria-label="Favorite of the month">${HEART(isFav(plan))}</button>` : ''}
     <div id="countdown"></div>`;
   renderCountdown();
 }
@@ -285,9 +304,22 @@ $('#outfits').addEventListener('input', (e) => {
   picks.outfit = e.target.value; savePicks(plan.id, picks); renderPicksBar();
 });
 
+$('#hero').addEventListener('click', (e) => {
+  if (!e.target.closest('#hero-fav')) return;
+  toggleFav(plan);
+  const b = $('#hero-fav'); b.setAttribute('aria-pressed', isFav(plan)); b.innerHTML = HEART(isFav(plan));
+  renderPicksBar();
+});
+
 // ---------- picks ----------
 function picksSummary() {
   const lines = [];
+  const m = monthOf(plan);
+  if (m in herFavs) {
+    const fav = allDates().find((p) => p.id === herFavs[m]);
+    const monthName = dateFromISO(`${m}-01`).toLocaleDateString(undefined, { month: 'long' });
+    lines.push(fav ? `Favorite of ${monthName}: ${fav.title}` : `No favorite for ${monthName}`);
+  }
   plan.items.forEach((it) => {
     const id = picks.options[it.id];
     const o = id && it.options.find((x) => x.id === id);
@@ -321,10 +353,14 @@ const accent = (p) => themeById(p.theme).swatch[2];
 const plansOn = (iso) => calPlans.filter((p) => p.date === iso).sort((a, b) => a.startTime.localeCompare(b.startTime));
 const endOf = (p) => { const sc = schedule(p); return sc.length ? sc[sc.length - 1].end : parseHM(p.startTime); };
 const stopsOf = (p) => p.items.filter((it) => it.type !== 'travel').map((it) => it.title || it.options[0]?.name || 'Stop');
-const row = (p, withDate) => `<button class="plan-row ${p.date < TODAY() ? 'past' : ''}" data-open="${p.id}" style="--c:${accent(p)}">
-    <i></i><span><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
+const row = (p, withDate, actions = true) => {
+  const heart = actions && canFav(p)
+    ? `<div class="row-actions"><button class="heart" data-fav="${p.id}" aria-pressed="${isFav(p)}" aria-label="Favorite of the month">${isFav(p) ? '♥' : '♡'}</button></div>` : '';
+  return `<div class="plan-row-wrap ${heart ? '' : 'bare'}" style="--acts:${heart ? 1 : 0}"><button class="plan-row ${p.date < TODAY() ? 'past' : ''}" data-open="${p.id}" style="--c:${accent(p)}">
+    <i></i><span><b>${isFav(p) ? '<span class="fav-mark">♥</span> ' : ''}${esc(p.title || 'Date')}</b>
     <small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${fmtTime(parseHM(p.startTime))} – ${fmtTime(endOf(p))}</small>
-    ${stopsOf(p).length ? `<small class="stops">${esc(stopsOf(p).join(' · '))}</small>` : ''}</span><span class="muted">›</span></button>`;
+    ${stopsOf(p).length ? `<small class="stops">${esc(stopsOf(p).join(' · '))}</small>` : ''}</span><span class="muted">›</span></button>${heart}</div>`;
+};
 
 function showCalendar() {
   $('#app').hidden = true; $('#picks-bar').hidden = true; $('#her-cal').hidden = false;
@@ -347,17 +383,17 @@ function renderCalendar() {
     const gridStart = addDays(toISODate(first), -first.getDay());
     const cells = Math.ceil((first.getDay() + new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate()) / 7) * 7;
     const key = hc.cursor.slice(0, 7);
-    const fav = calPlans.find((p) => p.favorite && p.date.slice(0, 7) === key);
+    const fav = calPlans.find((p) => p.id === favIdFor(key));
     body = `<div class="cal-grid">${DOW.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
       ${Array.from({ length: cells }, (_, i) => {
         const iso = addDays(gridStart, i); const d = dateFromISO(iso); const ps = plansOn(iso);
         const cls = [d.getMonth() !== c.getMonth() && 'out', iso < TODAY() && 'past', iso === TODAY() && 'today', iso === hc.sel && 'sel'].filter(Boolean).join(' ');
         return `<button class="cal-day ${cls}" data-day="${iso}" aria-label="${esc(fmtLongDate(iso))}${ps.length ? `, ${ps.length} date${ps.length > 1 ? 's' : ''}` : ''}">
           <span class="n">${d.getDate()}</span>
-          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${p.favorite ? 'fav' : ''}" style="--c:${accent(p)}">${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</span>`).join('')}</span>
+          <span class="cal-pills">${ps.map((p) => `<span class="cal-pill ${isFav(p) ? 'fav' : ''}" style="--c:${accent(p)}">${isFav(p) ? '♥ ' : ''}${esc(p.title || 'Date')}</span>`).join('')}</span>
         </button>`;
       }).join('')}</div>
-      ${fav ? `<div class="day-list fav-month"><h3>Favorite of ${MONTHS[c.getMonth()]}</h3>${row(fav, true)}</div>` : ''}
+      ${fav ? `<div class="day-list fav-month"><h3>Favorite of ${MONTHS[c.getMonth()]}</h3>${row(fav, true, false)}</div>` : ''}
       ${plansOn(hc.sel).length ? `<div class="day-list"><h3>${esc(fmtLongDate(hc.sel))}</h3>${plansOn(hc.sel).map((p) => row(p)).join('')}</div>` : ''}`;
   } else {
     const start = addDays(hc.cursor, -c.getDay());
@@ -368,7 +404,7 @@ function renderCalendar() {
       const iso = addDays(start, i); const d = dateFromISO(iso); const ps = plansOn(iso);
       return `<div class="wk-row ${iso < TODAY() ? 'past' : ''} ${iso === TODAY() ? 'today' : ''}">
         <div class="wk-date"><small>${d.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${d.getDate()}</b></div>
-        <div class="wk-plans">${ps.map((p) => `<button class="wk-plan" data-open="${p.id}" style="--c:${accent(p)}"><b>${p.favorite ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
+        <div class="wk-plans">${ps.map((p) => `<button class="wk-plan" data-open="${p.id}" style="--c:${accent(p)}"><b>${isFav(p) ? '♥ ' : ''}${esc(p.title || 'Date')}</b>
           <ol>${schedule(p).filter((x) => x.item.type !== 'travel').map((x, k) => `<li><span>${fmtTime(x.start)}</span>${esc(stopsOf(p)[k] || x.item.title)}</li>`).join('')}</ol></button>`).join('')}</div>
       </div>`;
     }).join('')}</div>`;
@@ -389,13 +425,18 @@ function renderCalendar() {
       </div>
     </div>
     ${body}
-    ${next.length ? `<div class="day-list"><h3>Next</h3>${next.slice(0, 3).map((p) => row(p, true)).join('')}</div>` : ''}
+    ${next.length ? `<div class="day-list"><h3>Next</h3>${next.slice(0, 3).map((p) => row(p, true, false)).join('')}</div>` : ''}
     ${past.length ? `<div class="day-list"><h3>Past dates</h3>${past.map((p) => row(p, true)).join('')}</div>` : ''}
     <footer class="foot"><div class="ornament" aria-hidden="true">♡</div></footer>`;
 }
 
 $('#her-cal').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.fav) {
+    const p = calPlans.find((x) => x.id === b.dataset.fav);
+    if (p) { toggleFav(p); renderCalendar(); }
+    return;
+  }
   if (b.dataset.open) {
     const p = calPlans.find((x) => x.id === b.dataset.open);
     if (p) { history.pushState({ v: 'plan', id: p.id }, ''); showPlan(p); window.scrollTo(0, 0); }

@@ -263,6 +263,11 @@ export async function decodeCalendar(str) {
   const d = await decodeJSON(str);
   return (d.plans || []).map(normalizePlan);
 }
+// Her favorites of the month, kept on her phone: { 'YYYY-MM': planId, or '' when she cleared it }.
+const HER_FAV_KEY = 'dp.herFav.v1';
+export function loadHerFavs() { try { return JSON.parse(safeGet(HER_FAV_KEY)) || {}; } catch { return {}; } }
+export const saveHerFavs = (m) => safeSet(HER_FAV_KEY, JSON.stringify(m));
+
 export function saveSharedCalendar(plans) { safeSet(SHARED_CAL_KEY, JSON.stringify(plans)); }
 export function loadSharedCalendar() {
   try { const v = JSON.parse(safeGet(SHARED_CAL_KEY)); return Array.isArray(v) ? v.map(normalizePlan) : null; } catch { return null; }

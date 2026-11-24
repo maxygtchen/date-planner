@@ -708,3 +708,28 @@ select {
 .side-row:hover .row-del, .side-row .row-del:focus-visible { opacity: 1; border-color: var(--line); }
 
 .tl-card p.place { color: var(--ink); opacity: .8; }
+
+/* rows: the date on the left, a tidy column of actions on the right */
+.plan-row-wrap { grid-template-columns: minmax(0, 1fr) auto !important; gap: 8px; }
+.plan-row-wrap.bare { grid-template-columns: minmax(0, 1fr) !important; }
+.row-actions { display: flex; flex-direction: column; gap: 6px; width: 46px; }
+.row-actions > button { flex: 1; width: 100% !important; height: auto !important; min-height: 38px; border-radius: 14px; padding: 0; display: grid; place-items: center; }
+.row-actions .heart { font-size: 17px; }
+.plan-row { min-height: 84px; }
+.fav-mark { color: var(--accent); }
+
+/* her favorite button on a date */
+.hero-fav {
+  display: inline-grid; place-items: center; width: 46px; height: 46px; margin-top: 20px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--accent); animation: rise 1s .42s ease backwards;
+}
+.hero-fav[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.hero-fav:active { transform: scale(.92); }
+
+/* balanced rows: every card spans the full width; actions sit inside it */
+.plan-row-wrap, .plan-row-wrap.bare { display: block !important; position: relative; }
+.plan-row-wrap .plan-row { width: 100%; padding-right: calc(16px + var(--acts, 0) * 44px); }
+.plan-row-wrap:not(.bare) .plan-row > .muted:last-child { display: none; }
+.row-actions { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); flex-direction: row; width: auto; gap: 8px; }
+.row-actions > button { flex: none; width: 36px !important; height: 36px !important; min-height: 0; border-radius: 50%; }
+.row-actions .heart { font-size: 16px; }

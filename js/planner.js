@@ -2,10 +2,10 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=12';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=12';
-import { geocode, placeFor } from './weather.js?v=12';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=12';
+} from './store.js?v=14';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=14';
+import { geocode, placeFor } from './weather.js?v=14';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=14';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -163,10 +163,16 @@ const monthKey = (iso) => iso.slice(0, 7);
 const TRASH_SVG = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
 const trash = (p) => `<button class="row-del" data-act="del-plan" data-id="${p.id}" aria-label="Delete ${esc(p.title || 'date')}">${TRASH_SVG}</button>`;
 const heart = (p) => `<button class="heart" data-act="fav" data-id="${p.id}" aria-pressed="${!!p.favorite}" aria-label="Favorite of the month">${p.favorite ? '♥' : '♡'}</button>`;
-const planRow = (p, withDate = false) => `<div class="plan-row-wrap">
+// Hearts only for dates that have happened (today counts); the favorite section shows the row alone.
+const canFav = (p) => p.date <= TODAY();
+const planRow = (p, withDate = false, actions = true) => {
+  const btns = actions ? `${canFav(p) ? heart(p) : ''}${trash(p)}` : '';
+  const n = actions ? (canFav(p) ? 2 : 1) : 0;
+  return `<div class="plan-row-wrap ${btns ? '' : 'bare'}" style="--acts:${n}">
     <button class="plan-row ${isPast(p) ? 'past' : ''}" data-act="select" data-id="${p.id}" style="--c:${accent(p)}">
-      <i></i><span><b>${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${timeRange(p)}${p.location?.name ? ` · ${esc(p.location.name.split(',')[0])}` : ''}</small></span><span class="muted">›</span>
-    </button>${heart(p)}${trash(p)}</div>`;
+      <i></i><span><b>${p.favorite ? '<span class="fav-mark">♥</span> ' : ''}${esc(p.title || 'Untitled')}</b><small>${withDate ? `${esc(dateFromISO(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))} · ` : ''}${timeRange(p)}</small></span><span class="muted">›</span>
+    </button>${btns ? `<div class="row-actions">${btns}</div>` : ''}</div>`;
+};
 
 function allDatesHTML() {
   const sorted = state.plans.slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
@@ -183,7 +189,7 @@ function favHTML(c) {
   if (!fav) return '';
   return `<div class="day-list fav-month">
     <h3>Favorite of ${MONTHS[c.getMonth()]}</h3>
-    ${planRow(fav, true)}
+    ${planRow(fav, true, false)}
   </div>`;
 }
 
@@ -556,6 +562,7 @@ document.addEventListener('click', async (e) => {
     case 'clear-key': setKey(''); renderSheet(); break;
     case 'fav': {
       const p = state.plans.find((x) => x.id === b.dataset.id);
+      if (!p || p.date > TODAY()) break;
       const on = !p.favorite;
       state.plans.forEach((x) => { if (monthKey(x.date) === monthKey(p.date)) x.favorite = false; });
       p.favorite = on;
