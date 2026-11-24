@@ -2,10 +2,14 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=14';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=14';
-import { geocode, placeFor } from './weather.js?v=14';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=14';
+} from './store.js?v=15';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=15';
+import { geocode, placeFor } from './weather.js?v=15';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=15';
+import {
+  syncEnabled, currentSpace, newSpace, rememberSpace, watchSpace, putPlan, removePlanRemote, setMeta, seedSpace,
+  syncedShareUrl, syncedPlannerUrl,
+} from './sync.js?v=15';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -34,11 +38,11 @@ function persist() {
   cur().updatedAt = Date.now();
   $('#saved').textContent = 'Saving…';
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveTimer = null; savePlans(state.plans); $('#saved').textContent = 'Saved'; }, 300);
+  saveTimer = setTimeout(() => { saveTimer = null; saveAll(); $('#saved').textContent = 'Saved'; }, 300);
 }
 
 // Save right away if the page is hidden or closed mid-debounce.
-function flush() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePlans(state.plans); $('#saved').textContent = 'Saved'; } }
+function flush() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; saveAll(); $('#saved').textContent = 'Saved'; } }
 addEventListener('pagehide', flush);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
@@ -327,10 +331,14 @@ function itemHTML(plan, { item: it, start, end, i }) {
   const n = plan.items.length;
   const p = `items.${i}`;
   const visibleOpts = it.options.filter((o) => !o.hidden && o.name).length;
+  const hers = herPicksFor(plan);
+  const herOpt = it.options.find((o) => o.id === hers.options?.[it.id]);
+  const herResv = hers.resv?.[it.id];
   const sub = [
     `${fmtTime(start)} – ${fmtTime(end)}`,
-    visibleOpts > 1 ? `${visibleOpts} choices` : it.options[0]?.name,
+    herOpt ? `her pick: ${herOpt.name}` : (visibleOpts > 1 ? `${visibleOpts} choices` : it.options[0]?.name),
     it.reservation?.needed ? (it.reservation.status === 'booked' ? '✓ reserved' : 'reservation ' + (it.reservation.status === 'pending' ? 'pending' : 'needed')) : '',
+    herResv ? `she said ${herResv} to booking` : '',
   ].filter(Boolean).join(' · ');
 
   return `
@@ -372,6 +380,8 @@ function itemHTML(plan, { item: it, start, end, i }) {
     </div>
   </article>`;
 }
+
+const herPicksFor = (plan) => state.herPicks?.[plan.id] || {};
 
 function optionsHTML(it, p) {
   return `
@@ -445,6 +455,15 @@ function outfitsTab(plan) {
     <h3>I'm wearing</h3>
     ${area('', 'outfit.me', o.me, 'aria-label="I\'m wearing"')}
   </section>
+  ${(() => {
+    const h = herPicksFor(plan);
+    const liked = (h.liked ? Object.values(h.liked) : []).map((i) => o.suggestions[i]).filter(Boolean);
+    if (!h.outfit?.trim() && !liked.length) return '';
+    return `<section class="p-card"><h3>She's wearing</h3>
+      ${h.outfit?.trim() ? `<p style="margin:0">${esc(h.outfit.trim())}</p>` : ''}
+      ${liked.length ? `<div class="toolbar" style="margin-top:10px">${liked.map((x) => `<span class="chip soft">♥ ${esc(x)}</span>`).join('')}</div>` : ''}
+    </section>`;
+  })()}
   <section class="p-card">
     <h3>Ideas</h3>
     <div class="toolbar" role="group" aria-label="Ideas">
@@ -462,7 +481,8 @@ function shareTab(plan) {
   return `
   <section class="p-card">
     <h3>Link</h3>
-    <p class="hint">Opens this date, with the calendar of all your dates. Make a new link after edits.</p>
+    ${space ? '<p class="hint">Live: she always sees your latest dates, and her picks show up here.</p>' : ''}
+    ${space ? '' : '<p class="hint">Opens this date, with the calendar of all your dates. Make a new link after edits.</p>'}
     <div class="share-link"><input id="share-url" readonly aria-label="Share link">
       <button class="btn primary" data-act="make-link">Make link</button></div>
     <div class="toolbar" style="margin-top:10px">
@@ -470,6 +490,11 @@ function shareTab(plan) {
       <button class="btn small ghost" data-act="open-link">Open</button>
     </div>
   </section>
+  ${space ? `<section class="p-card">
+    <h3>Your other devices</h3>
+    <p class="hint">Open this once on your phone or Mac to plan from it too.</p>
+    <button class="btn small" data-act="copy-planner-link">Copy planner link</button>
+  </section>` : ''}
   <section class="p-card">
     <h3>Home page</h3>
     ${featured ? '<p style="margin:0">★ Showing on home page</p>' : '<button class="btn" data-act="feature">★ Show on home page</button>'}
@@ -566,7 +591,7 @@ document.addEventListener('click', async (e) => {
       const on = !p.favorite;
       state.plans.forEach((x) => { if (monthKey(x.date) === monthKey(p.date)) x.favorite = false; });
       p.favorite = on;
-      savePlans(state.plans); render(); break;
+      saveAll(); render(); break;
     }
     case 'cal-mode': state.cal.mode = b.dataset.mode; state.cal.cursor = state.cal.sel || state.cal.cursor; render(); break;
     case 'cal-step': {
@@ -586,7 +611,7 @@ document.addEventListener('click', async (e) => {
     case 'delete-plan': deletePlan(plan.id); break;
     case 'del-plan': deletePlan(b.dataset.id); break;
     case 'undo-delete': undoDelete(); break;
-    case 'feature': setFeaturedId(plan.id); render(); toast('On home page'); break;
+    case 'feature': feature(plan.id); render(); toast('On home page'); break;
     case 'tab': state.tab = b.dataset.tab; renderPanel(); break;
     case 'theme': plan.theme = b.dataset.id; document.body.dataset.theme = plan.theme; structural(); break;
     case 'geo-pick': {
@@ -637,18 +662,22 @@ document.addEventListener('click', async (e) => {
       structural(); break;
     }
     case 'make-link': {
-      savePlans(state.plans);
-      $('#share-url').value = await shareUrl(plan, state.plans);
+      flush(); saveAll();
+      $('#share-url').value = await linkFor(plan);
       try { await navigator.clipboard.writeText($('#share-url').value); toast('Link copied'); } catch { $('#share-url').select(); }
       break;
     }
     case 'native-share': {
-      const url = await shareUrl(plan, state.plans); $('#share-url').value = url;
+      flush(); const url = await linkFor(plan); $('#share-url').value = url;
       if (navigator.share) { try { await navigator.share({ title: plan.title, url }); } catch { /* cancelled */ } }
       else { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { /* ignore */ } }
       break;
     }
-    case 'open-link': window.open(await shareUrl(plan, state.plans), '_blank', 'noopener'); break;
+    case 'open-link': flush(); window.open(await linkFor(plan), '_blank', 'noopener'); break;
+    case 'copy-planner-link': {
+      try { await navigator.clipboard.writeText(syncedPlannerUrl(space)); toast('Link copied'); } catch { toast(syncedPlannerUrl(space)); }
+      break;
+    }
     case 'export': {
       const { updatedAt, ...rest } = plan;
       try { await navigator.clipboard.writeText(JSON.stringify(rest, null, 2)); toast('Copied'); } catch { toast('Could not copy'); }
@@ -877,20 +906,82 @@ function deletePlan(id) {
   if (lastDeleted.wasCurrent) { state.curId = state.plans[0].id; state.view = 'calendar'; }
   if (lastDeleted.featured) {
     const next = state.plans.filter((p) => !isPast(p)).sort((a, b) => a.date.localeCompare(b.date))[0] || state.plans[0];
-    setFeaturedId(next.id);
+    feature(next.id);
   }
-  clearTimeout(saveTimer); saveTimer = null; savePlans(state.plans); render();
+  clearTimeout(saveTimer); saveTimer = null; saveAll(); render();
   toast('Deleted', '<button class="toast-btn" data-act="undo-delete">Undo</button>');
 }
 function undoDelete() {
   if (!lastDeleted) return;
   const { plan, index, featured, wasCurrent } = lastDeleted;
   state.plans.splice(Math.min(index, state.plans.length), 0, plan);
-  if (featured) setFeaturedId(plan.id);
+  if (featured) feature(plan.id);
   if (wasCurrent) { state.curId = plan.id; state.view = 'edit'; }
   lastDeleted = null;
-  savePlans(state.plans); render();
+  saveAll(); render();
   $('#toast').classList.remove('show');
 }
 
+// ---------- live sync ----------
+let space = null;
+let remoteJSON = {}; // id → JSON last seen in the cloud, so only real changes are sent
+const sameJSON = (p) => JSON.stringify(p);
+
+function saveAll() {
+  savePlans(state.plans);
+  if (!space) return;
+  const ids = new Set();
+  state.plans.forEach((p) => {
+    ids.add(p.id);
+    const j = sameJSON(p);
+    if (remoteJSON[p.id] !== j) { remoteJSON[p.id] = j; putPlan(space, p).catch(syncError); }
+  });
+  Object.keys(remoteJSON).forEach((id) => { if (!ids.has(id)) { delete remoteJSON[id]; removePlanRemote(space, id).catch(syncError); } });
+}
+function feature(id) { setFeaturedId(id); if (space) setMeta(space, 'featured', id).catch(syncError); }
+async function linkFor(plan) { return space ? syncedShareUrl(space, plan.id) : shareUrl(plan, state.plans); }
+function syncError(err) { console.error('sync', err); $('#saved').textContent = 'Offline'; }
+
+const typing = () => { const a = document.activeElement; return a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
+
+async function startSync() {
+  if (!syncEnabled) return;
+  space = currentSpace();
+  const fresh = !space;
+  if (fresh) { space = newSpace(); rememberSpace(space); }
+  let first = true;
+  await watchSpace(space, {
+    onError: syncError,
+    onMeta(meta) { if (meta.featured && meta.featured !== getFeaturedId()) { setFeaturedId(meta.featured); if (!typing()) renderSide(); } },
+    onPicks(picks) { state.herPicks = picks; if (!typing() && state.view === 'edit') renderPanel(); },
+    async onPlans(map) {
+      const remote = Object.values(map).map(normalizePlan);
+      if (first) {
+        first = false;
+        // A brand-new space (or one with nothing in it yet) gets this device's dates.
+        if (!remote.length) {
+          remoteJSON = {};
+          await seedSpace(space, state.plans, getFeaturedId()).catch(syncError);
+          state.plans.forEach((p) => { remoteJSON[p.id] = sameJSON(p); });
+          renderPanelIfShare();
+          return;
+        }
+      }
+      remoteJSON = Object.fromEntries(remote.map((p) => [p.id, sameJSON(p)]));
+      // Keep the date being edited if it has unsaved changes.
+      const pending = saveTimer ? cur() : null;
+      state.plans = remote.map((p) => (pending && p.id === pending.id ? pending : p));
+      if (!state.plans.length) state.plans.push(blankPlan());
+      if (!state.plans.some((p) => p.id === state.curId)) { state.curId = state.plans[0].id; if (state.view === 'edit') state.view = 'calendar'; }
+      savePlans(state.plans);
+      if (typing()) { renderSide(); return; }
+      render();
+    },
+  });
+  $('#saved').textContent = 'Synced';
+  renderPanelIfShare();
+}
+function renderPanelIfShare() { if (state.view === 'edit' && state.tab === 'share') renderPanel(); }
+
 render();
+startSync();

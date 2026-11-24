@@ -37,3 +37,13 @@ Her choices (which restaurant, which outfit ideas she liked, what she's wearing)
 ## Data
 
 Plans are saved in your browser's `localStorage`. Weather comes from [Open-Meteo](https://open-meteo.com), which needs no API key.
+
+## Live sync (Firebase)
+
+With Firebase set up, the planner and her page share one private "space": your edits and deletes show on her page right away, and her picks, outfit and favorites show in your planner.
+
+1. Create a project at https://console.firebase.google.com, add a **Web app**, and create a **Realtime Database**.
+2. In the database's **Rules** tab, paste `database.rules.json` and publish.
+3. Put the web app's config into `js/firebase-config.js`.
+
+The first time the planner opens with sync on, it creates a space and uploads your dates. Links you share carry the space code (`#s=…`); use **Share → Your other devices** to open the planner on another device. Without a config, the site works as before and links carry a snapshot.

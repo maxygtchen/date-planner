@@ -1,18 +1,23 @@
 import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
-  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate,
+  fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate, normalizePlan,
   decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar, loadHerFavs, saveHerFavs,
-} from './store.js?v=14';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=14';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=14';
+} from './store.js?v=15';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=15';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=15';
+import { syncEnabled, currentSpace, watchSpace, putPicks, patchPlans } from './sync.js?v=15';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
 
 let calPlans = null; // the dates she can browse in the calendar
 
+let space = null;        // live sync space, when connected
+let remotePicks = {};    // her picks per date, from the cloud
+
 async function init() {
   setInterval(renderCountdown, 30000);
+  if (syncEnabled && (space = currentSpace())) { startLive(); return; }
   const bundle = location.hash.match(/d=([^&]+)/);
   if (bundle) {
     try {
@@ -38,10 +43,20 @@ async function init() {
   showPlan(plan);
 }
 
+function picksFor(id) {
+  const p = { options: {}, resv: {}, outfit: '', liked: [], ...loadPicks(id), ...(remotePicks[id] || {}) };
+  p.options = p.options || {}; p.resv = p.resv || {}; p.outfit = p.outfit || '';
+  p.liked = Array.isArray(p.liked) ? p.liked : Object.values(p.liked || {});
+  return p;
+}
+function storePicks() {
+  savePicks(plan.id, picks);
+  if (space) { remotePicks[plan.id] = JSON.parse(JSON.stringify(picks)); putPicks(space, plan.id, picks).catch((e) => console.error('sync', e)); }
+}
+
 function showPlan(p) {
   plan = p;
-  picks = { options: {}, resv: {}, outfit: '', liked: [], ...loadPicks(plan.id) };
-  picks.resv = picks.resv || {};
+  picks = picksFor(plan.id);
   forecast = null; navTarget = null;
   $('#her-cal').hidden = true; $('#app').hidden = false;
   $('#cal-btn').hidden = !calPlans?.length;
@@ -75,14 +90,22 @@ let herFavs = loadHerFavs();
 const monthOf = (p) => p.date.slice(0, 7);
 const allDates = () => (calPlans?.length ? calPlans : [plan]);
 function favIdFor(month) {
-  if (month in herFavs) return herFavs[month];
+  if (!space && month in herFavs) return herFavs[month];
   return allDates().find((p) => p.favorite && monthOf(p) === month)?.id || '';
 }
 const isFav = (p) => !!p && favIdFor(monthOf(p)) === p.id;
 const canFav = (p) => p.date <= toISODate(new Date());
 function toggleFav(p) {
   if (!canFav(p)) return;
-  herFavs = { ...herFavs, [monthOf(p)]: isFav(p) ? '' : p.id };
+  const on = !isFav(p);
+  if (space) {
+    // Shared: one favorite per month for both of us.
+    const fields = {};
+    allDates().filter((x) => monthOf(x) === monthOf(p)).forEach((x) => { x.favorite = on && x.id === p.id; fields[`${x.id}/favorite`] = x.favorite; });
+    patchPlans(space, fields).catch((e) => console.error('sync', e));
+    return;
+  }
+  herFavs = { ...herFavs, [monthOf(p)]: on ? p.id : '' };
   saveHerFavs(herFavs);
 }
 const HEART = (on) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/></svg>`;
@@ -203,7 +226,7 @@ $('#timeline').addEventListener('click', (e) => {
     const cur = picks.resv[r.dataset.resv];
     if (cur === r.dataset.v) delete picks.resv[r.dataset.resv];
     else picks.resv[r.dataset.resv] = r.dataset.v;
-    savePicks(plan.id, picks); renderTimeline(); renderPicksBar();
+    storePicks(); renderTimeline(); renderPicksBar();
     return;
   }
   const opt = e.target.closest('.opt');
@@ -215,7 +238,7 @@ $('#timeline').addEventListener('keydown', (e) => {
 });
 function choose(el) {
   picks.options[el.dataset.item] = el.dataset.opt;
-  savePicks(plan.id, picks);
+  storePicks();
   renderTimeline();
   renderPicksBar();
   document.querySelector(`.opt[data-opt="${el.dataset.opt}"]`)?.focus({ preventScroll: true });
@@ -297,11 +320,11 @@ $('#outfits').addEventListener('click', (e) => {
   const b = e.target.closest('[data-like]'); if (!b) return;
   const i = Number(b.dataset.like);
   picks.liked = picks.liked.includes(i) ? picks.liked.filter((x) => x !== i) : [...picks.liked, i];
-  savePicks(plan.id, picks); renderOutfit(); renderPicksBar();
+  storePicks(); renderOutfit(); renderPicksBar();
 });
 $('#outfits').addEventListener('input', (e) => {
   if (e.target.id !== 'her-outfit') return;
-  picks.outfit = e.target.value; savePicks(plan.id, picks); renderPicksBar();
+  picks.outfit = e.target.value; storePicks(); renderPicksBar();
 });
 
 $('#hero').addEventListener('click', (e) => {
@@ -315,7 +338,7 @@ $('#hero').addEventListener('click', (e) => {
 function picksSummary() {
   const lines = [];
   const m = monthOf(plan);
-  if (m in herFavs) {
+  if (!space && m in herFavs) {
     const fav = allDates().find((p) => p.id === herFavs[m]);
     const monthName = dateFromISO(`${m}-01`).toLocaleDateString(undefined, { month: 'long' });
     lines.push(fav ? `Favorite of ${monthName}: ${fav.title}` : `No favorite for ${monthName}`);
@@ -460,6 +483,49 @@ addEventListener('popstate', (e) => {
   else if (st.v === 'plan') { const p = calPlans?.find((x) => x.id === st.id) || plan; showPlan(p); }
 });
 
+// ---------- live sync ----------
+function startLive() {
+  const focus = location.hash.match(/[#&]f=([\w-]+)/)?.[1];
+  let first = true; let featured = null;
+  const viewingCalendar = () => !$('#her-cal').hidden;
+  const typingOutfit = () => document.activeElement?.id === 'her-outfit';
+  watchSpace(space, {
+    onError: (e) => console.error('sync', e),
+    onMeta(meta) { featured = meta.featured || null; },
+    onPicks(map) {
+      remotePicks = map || {};
+      if (first || viewingCalendar() || !plan) return;
+      const next = picksFor(plan.id);
+      if (JSON.stringify(next) === JSON.stringify(picks) || typingOutfit()) return;
+      picks = next; renderTimeline(); renderOutfit(); renderPicksBar();
+    },
+    onPlans(map) {
+      calPlans = Object.values(map).map(normalizePlan).sort((a, b) => a.date.localeCompare(b.date));
+      saveSharedCalendar(calPlans);
+      if (first) {
+        first = false;
+        const start = calPlans.find((p) => p.id === focus) || calPlans.find((p) => p.id === featured)
+          || calPlans.find((p) => p.date >= TODAY()) || calPlans[calPlans.length - 1];
+        if (!start) { $('#app').hidden = true; $('#her-cal').hidden = false; $('#her-cal').innerHTML = '<p class="wx-empty" style="padding:40px 0;text-align:center">No dates yet.</p>'; return; }
+        history.replaceState({ v: 'plan', id: start.id }, '');
+        showPlan(start);
+        return;
+      }
+      if (viewingCalendar()) { if (calPlans.length) renderCalendar(); return; }
+      const updated = calPlans.find((p) => p.id === plan?.id);
+      if (!updated) { if (calPlans.length) { history.replaceState({ v: 'cal' }, ''); showCalendar(); } return; }
+      const moved = updated.date !== plan.date || updated.location?.lat !== plan.location?.lat || updated.location?.lon !== plan.location?.lon;
+      plan = updated;
+      $('#cal-btn').hidden = !calPlans.length;
+      const theme = themeById(plan.theme);
+      if (document.body.dataset.theme !== theme.id) { document.body.dataset.theme = theme.id; mountFx(document.getElementById('fx'), theme); }
+      renderHero(theme); renderNav(); renderTimeline(); renderPicksBar();
+      if (!typingOutfit()) renderOutfit();
+      if (moved) { forecast = null; renderWeather(); loadWeather(); } else renderWeather();
+    },
+  });
+}
+
 // ---------- section bar ----------
 // The URL hash carries the plan, so these links scroll by hand instead of changing the hash.
 const SECTIONS = ['plan', 'weather', 'outfits'];
@@ -499,5 +565,5 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-addEventListener('hashchange', () => { if (/[pcd]=/.test(location.hash)) location.reload(); });
+addEventListener('hashchange', () => { if (/[pcds]=/.test(location.hash)) location.reload(); });
 init();

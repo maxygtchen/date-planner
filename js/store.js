@@ -127,17 +127,22 @@ export function loadPicks(planId) {
 export const savePicks = (planId, picks) => safeSet(PICKS_PREFIX + planId, JSON.stringify(picks));
 
 // Fill in any fields missing from older or hand-written plans (e.g. JSON pasted from Claude).
+// Lists can come back from the database as objects keyed 0,1,2…
+const list = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []);
+
 export function normalizePlan(p) {
   const base = blankPlan();
   const plan = { ...base, ...p, location: { ...base.location, ...(p.location || {}) }, outfit: { ...base.outfit, ...(p.outfit || {}) }, labels: { ...(p.labels || {}) } };
   plan.id = plan.id || uid();
-  plan.items = (p.items || []).map((it) => {
+  plan.outfit.palette = list(plan.outfit.palette);
+  plan.outfit.suggestions = list(plan.outfit.suggestions);
+  plan.items = list(p.items).map((it) => {
     const b = newItem(it.type || 'activity');
     return {
       ...b, ...it, id: it.id || uid(),
       duration: Math.max(5, Number(it.duration) || b.duration),
       reservation: { ...b.reservation, ...(it.reservation || {}) },
-      options: (it.options || []).map((o) => ({ ...newOption(), ...o, id: o.id || uid() })),
+      options: list(it.options).map((o) => ({ ...newOption(), ...o, id: o.id || uid() })),
     };
   });
   return plan;

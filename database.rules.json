@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "spaces": {
+      "$space": {
+        ".read": "$space.length >= 20",
+        ".write": "$space.length >= 20"
+      }
+    }
+  }
+}
