@@ -2,14 +2,14 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=15';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=15';
-import { geocode, placeFor } from './weather.js?v=15';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=15';
+} from './store.js?v=16';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=16';
+import { geocode, placeFor } from './weather.js?v=16';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=16';
 import {
   syncEnabled, currentSpace, newSpace, rememberSpace, watchSpace, putPlan, removePlanRemote, setMeta, seedSpace,
   syncedShareUrl, syncedPlannerUrl,
-} from './sync.js?v=15';
+} from './sync.js?v=16';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -36,6 +36,7 @@ const cur = () => state.plans.find((p) => p.id === state.curId);
 let saveTimer;
 function persist() {
   cur().updatedAt = Date.now();
+  delete cur().sample;
   $('#saved').textContent = 'Saving…';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = null; saveAll(); $('#saved').textContent = 'Saved'; }, 300);
@@ -965,6 +966,12 @@ async function startSync() {
           state.plans.forEach((p) => { remoteJSON[p.id] = sameJSON(p); });
           renderPanelIfShare();
           return;
+        }
+        // Joining a space from another device: keep this device's own dates too (not an untouched sample).
+        const extra = state.plans.filter((p) => !p.sample && !remote.some((r) => r.id === p.id));
+        if (extra.length) {
+          extra.forEach((p) => putPlan(space, p).catch(syncError));
+          remote.push(...extra);
         }
       }
       remoteJSON = Object.fromEntries(remote.map((p) => [p.id, sameJSON(p)]));

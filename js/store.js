@@ -20,6 +20,7 @@ export const PRICES = ['', '$', '$$', '$$$', '$$$$'];
 export function samplePlan() {
   return {
     id: uid(),
+    sample: true, // cleared on first edit; an untouched sample isn't uploaded when joining a space
     title: 'Saturday Night',
     date: '2026-12-05',
     startTime: '16:00',

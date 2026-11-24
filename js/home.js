@@ -2,10 +2,10 @@ import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate, normalizePlan,
   decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar, loadHerFavs, saveHerFavs,
-} from './store.js?v=15';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=15';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=15';
-import { syncEnabled, currentSpace, watchSpace, putPicks, patchPlans } from './sync.js?v=15';
+} from './store.js?v=16';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=16';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=16';
+import { syncEnabled, currentSpace, watchSpace, putPicks, patchPlans } from './sync.js?v=16';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
