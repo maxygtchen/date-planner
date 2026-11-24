@@ -2,10 +2,10 @@ import {
   loadPlans, getFeaturedId, decodePlan, loadPicks, savePicks, schedule, fmtTime, fmtDuration,
   fmtLongDate, dateFromISO, parseHM, ITEM_TYPES, mapsUrl, esc, safeUrl, label, toISODate, normalizePlan,
   decodeCalendar, decodeBundle, saveSharedCalendar, loadSharedCalendar, loadHerFavs, saveHerFavs,
-} from './store.js?v=16';
-import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=16';
-import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=16';
-import { syncEnabled, currentSpace, watchSpace, putPicks, patchPlans } from './sync.js?v=16';
+} from './store.js?v=17';
+import { themeById, EMBLEMS, mountFx, THEMES } from './themes.js?v=17';
+import { getForecast, describe, ICONS, weatherTip } from './weather.js?v=17';
+import { syncEnabled, currentSpace, watchSpace, putPicks, patchPlans } from './sync.js?v=17';
 
 const $ = (s) => document.querySelector(s);
 let plan, picks, forecast = null;
@@ -356,6 +356,8 @@ function picksSummary() {
   return lines;
 }
 function renderPicksBar() {
+  // With live sync her picks reach the planner on their own, so there's nothing to send.
+  if (syncEnabled) { $('#picks-bar').hidden = true; return; }
   const n = picksSummary().length;
   $('#picks-bar').hidden = n === 0;
   $('#picks-text').textContent = `${n} pick${n === 1 ? '' : 's'}`;

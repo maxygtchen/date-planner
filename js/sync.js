@@ -1,7 +1,7 @@
 // Live sync: every date, her picks and the home-page date live in one private
 // "space" in Firebase Realtime Database. The space code is in your links
 // (#s=…) and saved on each device that opens one.
-import { FIREBASE_CONFIG } from './firebase-config.js?v=16';
+import { FIREBASE_CONFIG } from './firebase-config.js?v=17';
 
 const SDK = 'https://www.gstatic.com/firebasejs/13.2.0';
 const SPACE_KEY = 'dp.space.v1';

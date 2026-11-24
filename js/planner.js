@@ -2,14 +2,14 @@ import {
   loadPlans, savePlans, getFeaturedId, setFeaturedId, blankPlan, newItem, newOption, normalizePlan,
   schedule, fmtTime, fmtDuration, fmtLongDate, parseHM, ITEM_TYPES, PRICES, uid, toISODate, dateFromISO,
   WARDROBE, LABELS, LABEL_NAMES, mapsUrl, openTableUrl, resyUrl, searchUrl, shareUrl, esc, safeUrl,
-} from './store.js?v=16';
-import { THEMES, themeById, EMBLEMS } from './themes.js?v=16';
-import { geocode, placeFor } from './weather.js?v=16';
-import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=16';
+} from './store.js?v=17';
+import { THEMES, themeById, EMBLEMS } from './themes.js?v=17';
+import { geocode, placeFor } from './weather.js?v=17';
+import { buildWithClaude, buildLocally, getKey, setKey } from './builder.js?v=17';
 import {
   syncEnabled, currentSpace, newSpace, rememberSpace, watchSpace, putPlan, removePlanRemote, setMeta, seedSpace,
   syncedShareUrl, syncedPlannerUrl,
-} from './sync.js?v=16';
+} from './sync.js?v=17';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
